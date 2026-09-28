@@ -2558,6 +2558,51 @@ textarea:focus-visible {
   font-size: 9px;
 }
 
+.pdf-viewer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  padding: 24px;
+  display: grid;
+  place-items: center;
+  background: rgb(13 31 40 / 70%);
+}
+
+.pdf-viewer-dialog {
+  width: min(1100px, 100%);
+  height: min(900px, 92vh);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #dce5e7;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 24px 80px rgb(8 30 40 / 32%);
+}
+
+.pdf-viewer-header {
+  min-height: 52px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e8edef;
+}
+
+.pdf-viewer-header>span {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #455e68;
+}
+
+.pdf-viewer-frame {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #f7f9f9;
+}
+
 .aside-note {
   padding: 11px;
   display: flex;

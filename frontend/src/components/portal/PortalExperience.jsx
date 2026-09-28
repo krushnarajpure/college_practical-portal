@@ -252,6 +252,8 @@ function OriginalPdfPanel({ notify }) {
   const { pathname } = useLocation();
   const practicalId = pathname.match(/^\/student\/practicals\/([^/]+)/)?.[1];
   const [pdfId, setPdfId] = useState('');
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
   useEffect(() => {
     let active = true;
     if (!practicalId) return () => { active = false; };
@@ -262,17 +264,19 @@ function OriginalPdfPanel({ notify }) {
     });
     return () => { active = false; };
   }, [practicalId]);
+  useEffect(() => () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
   const openPdf = async () => {
-    const popup = window.open('about:blank', '_blank');
+    if (!pdfId || pdfLoading || previewUrl) return;
+    setPdfLoading(true);
     try {
-      if (!pdfId) throw new Error('No original PDF is attached.');
       const url = await pdfService.view(pdfId);
-      if (popup) { popup.opener = null; popup.location.href = url; }
-      else window.location.href = url;
-      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setPreviewUrl(url);
     } catch (error) {
-      popup?.close();
       notify(error.message || 'Could not open the original PDF.');
+    } finally {
+      setPdfLoading(false);
     }
   };
   const downloadPdf = async () => {
@@ -283,7 +287,7 @@ function OriginalPdfPanel({ notify }) {
       notify(error.message || 'Could not download the original PDF.');
     }
   };
-  return <section className="pdf-panel" id="original-pdf"><div className="pdf-panel-head"><span className="pdf-icon"><FileText size={18} /></span><span><strong>Original practical PDF</strong><small>Teacher-uploaded source file</small></span><MoreHorizontal size={18} /></div><div className="pdf-preview"><FileText size={35} /><strong>{pdfId ? 'Original handout attached' : 'No PDF attached'}</strong><span>Stored in MongoDB GridFS</span></div><div className="pdf-actions"><Button variant="secondary" icon={ArrowRight} onClick={openPdf} disabled={!pdfId}>Open PDF</Button><Button variant="quiet" icon={ArrowDownToLine} onClick={downloadPdf} disabled={!pdfId}>Download</Button></div></section>;
+  return <><section className="pdf-panel" id="original-pdf"><div className="pdf-panel-head"><span className="pdf-icon"><FileText size={18} /></span><span><strong>Original practical PDF</strong><small>Teacher-uploaded source file</small></span><MoreHorizontal size={18} /></div><div className="pdf-preview"><FileText size={35} /><strong>{pdfId ? 'Original handout attached' : 'No PDF attached'}</strong><span>Stored in MongoDB GridFS</span></div><div className="pdf-actions"><Button variant="secondary" icon={pdfLoading ? LoaderCircle : ArrowRight} onClick={openPdf} disabled={!pdfId || pdfLoading || Boolean(previewUrl)}>{pdfLoading ? 'Opening...' : previewUrl ? 'PDF open' : 'Open PDF'}</Button><Button variant="quiet" icon={ArrowDownToLine} onClick={downloadPdf} disabled={!pdfId}>Download</Button></div></section>{previewUrl && <div className="pdf-viewer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewUrl(''); }}><section className="pdf-viewer-dialog" role="dialog" aria-modal="true" aria-label="Original practical PDF"><header className="pdf-viewer-header"><span><FileText size={18} /><strong>Original practical PDF</strong></span><button className="icon-button" type="button" onClick={() => setPreviewUrl('')} aria-label="Close PDF preview"><X size={18} /></button></header><iframe className="pdf-viewer-frame" src={previewUrl} title="Original practical PDF" /></section></div>}</>;
 }
 
 function StudentBookmarks({ practicalList, bookmarkedIds, subjectList = [] }) {

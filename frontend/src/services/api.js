@@ -37,12 +37,31 @@ async function request(path, options = {}) {
   return parsed ?? { success: true, data: null };
 }
 
+async function requestBlob(path) {
+  const url = new URL(path.startsWith('http') ? path : `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`);
+  const token = typeof localStorage !== 'undefined'
+    ? localStorage.getItem('college_practical_token')
+    : null;
+  const response = await fetch(url, {
+    credentials: 'include',
+    headers: token ? { Authorization: `Bearer ${token}` } : {}
+  });
+
+  if (!response.ok) {
+    const parsed = await response.json().catch(() => null);
+    throw new Error(parsed?.message || parsed?.error || response.statusText || 'Request failed');
+  }
+
+  return response.blob();
+}
+
 const api = {
   get: (path, query) => request(path, { method: 'GET', query }),
   post: (path, body, query) => request(path, { method: 'POST', body, query }),
   put: (path, body, query) => request(path, { method: 'PUT', body, query }),
   patch: (path, body, query) => request(path, { method: 'PATCH', body, query }),
   del: (path, query) => request(path, { method: 'DELETE', query }),
+  getBlob: requestBlob,
   request
 };
 

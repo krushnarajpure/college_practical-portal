@@ -47,6 +47,7 @@ app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 200,
+    skip: () => process.env.NODE_ENV !== 'production',
     message: {
       success: false,
       message: 'Too many requests. Please try again later.',
