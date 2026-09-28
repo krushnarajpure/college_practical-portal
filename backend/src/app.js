@@ -25,9 +25,19 @@ import { notFoundHandler, errorMiddleware } from './middleware/errorMiddleware.j
 
 const app = express();
 
+const allowedOrigins = [env.frontendUrl];
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.push(
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:5174',
+    'http://127.0.0.1:5174'
+  );
+}
+
 app.use(
   cors({
-    origin: env.frontendUrl,
+    origin: allowedOrigins,
     credentials: true
   })
 );

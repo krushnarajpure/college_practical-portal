@@ -1,39 +1,34 @@
-import api from './api';
+import { users } from '../data/portalData.js';
+import { apiResponse, readCollection, writeCollection } from './mockStore.js';
+
+const userStorageKey = 'portal-mock-users';
+const sessionStorageKey = 'college-portal-user';
 
 const authService = {
-  login: async ({ email, password, role }) => {
-    const response = await api.post('/auth/login', { email, password, role });
-    const token = response?.data?.token;
-    const user = response?.data?.user;
-
-    if (token) localStorage.setItem('college_practical_token', token);
-    if (user) localStorage.setItem('college_practical_user', JSON.stringify(user));
-
-    return response;
+  login: async ({ email, role }) => {
+    const accounts = readCollection(userStorageKey, users);
+    const account = accounts.find((item) => item.role === role && item.email.toLowerCase() === email.toLowerCase())
+      || accounts.find((item) => item.role === role);
+    if (!account) return { success: false, message: 'No demo account is available for this role.', data: null };
+    const sessionUser = { ...account, email: email || account.email };
+    writeCollection(sessionStorageKey, sessionUser);
+    return apiResponse('Signed in to the mock portal.', sessionUser);
   },
   register: async (details) => {
-    const response = await api.post('/auth/register', details);
-    const token = response?.data?.token;
-    const user = response?.data?.user;
-
-    if (token) localStorage.setItem('college_practical_token', token);
-    if (user) localStorage.setItem('college_practical_user', JSON.stringify(user));
-
-    return response;
+    const { password: _password, confirmPassword: _confirmPassword, ...profile } = details;
+    const account = { ...profile, id: `${details.role}-${Date.now()}`, name: details.fullName?.trim() };
+    const accounts = readCollection(userStorageKey, users);
+    writeCollection(userStorageKey, [...accounts, account]);
+    writeCollection(sessionStorageKey, account);
+    return apiResponse('Mock account created.', account);
   },
   logout: async () => {
-    try {
-      await api.post('/auth/logout', {});
-    } catch {
-      // ignore backend logout errors; clear local session anyway
-    }
-    localStorage.removeItem('college_practical_token');
-    localStorage.removeItem('college_practical_user');
-    return { success: true, message: 'Signed out.', data: null };
+    try { globalThis.localStorage?.removeItem(sessionStorageKey); } catch { }
+    return apiResponse('Signed out.', null);
   },
-  getCurrentUser: async () => api.get('/auth/me'),
-  forgotPassword: async ({ email }) => api.post('/auth/forgot-password', { email }),
-  resetPassword: async (payload) => api.post('/auth/reset-password', payload)
+  getCurrentUser: async () => apiResponse('Current mock session loaded.', readCollection(sessionStorageKey, null)),
+  forgotPassword: async ({ email }) => apiResponse('If an account exists, reset instructions will be sent.', { email }),
+  resetPassword: async () => apiResponse('Password reset is ready for the backend auth endpoint.', null)
 };
 
 export default authService;

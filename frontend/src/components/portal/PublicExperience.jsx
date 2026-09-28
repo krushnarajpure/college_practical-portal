@@ -14,6 +14,12 @@ const roleCopy = {
   teacher: ['Teacher', 'Manage practicals and share reviewed learning resources.', Users],
   admin: ['Administrator', 'Manage users, curriculum and academic structure.', ShieldCheck]
 };
+const loginRoleOptions = [
+  { label: 'Student', value: 'student' },
+  { label: 'Teacher', value: 'teacher' },
+  { label: 'Administrator', value: 'admin' }
+];
+const normalizeLoginRole = (value) => loginRoleOptions.find((option) => option.value === value || option.label === value)?.value || 'student';
 
 function PublicHeader() {
   return <header className="public-header"><Link to="/" className="brand-lockup"><span className="brand-mark"><BookOpen size={19} /></span><span><strong>College Practical Portal</strong><small>ALL YOUR PRACTICALS. ONE PLACE.</small></span></Link><nav className="public-nav" aria-label="Main navigation"><Link to="/">Home</Link><a href="/#features">Features</a><a href="/#how-it-works">How it works</a><a href="/#about">About</a></nav><div className="public-actions"><Link to="/login" className="button button-quiet">Log in</Link><Link to="/select-role" className="button button-primary">Get started <ArrowRight size={15} /></Link></div></header>;
@@ -39,7 +45,7 @@ function AuthPage({ mode = 'login' }) {
   const { login, register } = useAuth();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [role, setRole] = useState(params.get('role') || 'student');
+  const [role, setRole] = useState(() => normalizeLoginRole(params.get('role')));
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -86,17 +92,17 @@ function AuthPage({ mode = 'login' }) {
     try {
       const signedIn = registerMode
         ? await register({
-            fullName: fields.fullName,
-            email: fields.email,
-            password: fields.password,
-            role,
-            studentId: fields.studentId,
-            employeeId: fields.employeeId,
-            departmentId: fields.departmentId,
-            yearId: fields.yearId,
-            semesterId: fields.semesterId
-          })
-        : await login({ email: fields.email, password: fields.password, role });
+          fullName: fields.fullName,
+          email: fields.email,
+          password: fields.password,
+          role,
+          studentId: fields.studentId,
+          employeeId: fields.employeeId,
+          departmentId: fields.departmentId,
+          yearId: fields.yearId,
+          semesterId: fields.semesterId
+        })
+        : await login({ email: fields.email, password: fields.password, role: normalizeLoginRole(role) });
       navigate(roleDestinations[signedIn.role], { replace: true });
     } catch (submitError) { setError(submitError.message || 'We could not complete that request.'); }
     finally { setBusy(false); }

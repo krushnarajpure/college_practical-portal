@@ -148,11 +148,13 @@ export default function TeacherPracticalModal({ practical, user, notify, onSaved
         setAnalysisPending(false);
       }
 
-      await onSaved();
+      onSaved().catch(() => {
+        notify('Practical saved, but the list could not refresh. Reload the practicals page to see the latest data.');
+      });
       notify(isEdit ? 'Practical saved to MongoDB.' : 'Practical saved with its original PDF. AI guidance is ready for review.');
       navigate('/teacher/practicals');
     } catch (saveError) {
-      if (currentPractical?._id) await onSaved().catch(() => undefined);
+      if (currentPractical?._id) onSaved().catch(() => undefined);
       setError(saveError.message || 'Could not save this practical.');
     } finally {
       setSaving(false);

@@ -57,7 +57,7 @@ try {
 function appendLog(fileName: string, message: string): void {
   try {
     const line = `[${new Date().toISOString()}] ${message}\n`;
-    fs.appendFile(path.join(LOGS_DIR, fileName), line, () => {});
+    fs.appendFile(path.join(LOGS_DIR, fileName), line, () => { });
   } catch {
     /* logging is best-effort */
   }
@@ -507,7 +507,7 @@ async function startServer() {
         callDesktopAgent(
           patch.autoStart ? "enableAutoStart" : "disableAutoStart",
           {},
-        ).catch(() => {});
+        ).catch(() => { });
       }
 
       logCommand(`SETTINGS_UPDATED ${JSON.stringify(patch)}`);
@@ -665,7 +665,7 @@ async function startServer() {
             try {
               const u = new URL(url);
               href = `${u.protocol}//${u.host}${href}`;
-            } catch {}
+            } catch { }
           }
           if (href.startsWith("http://") || href.startsWith("https://")) {
             links.push({ text, href });
@@ -1048,21 +1048,21 @@ async function startServer() {
         if (activeLiveClient.session) {
           try {
             activeLiveClient.session.close();
-          } catch {}
+          } catch { }
         }
         if (activeLiveClient.ws && activeLiveClient.ws.readyState === 1) {
           try {
             activeLiveClient.ws.close();
-          } catch {}
+          } catch { }
         }
-      } catch (e) {}
+      } catch (e) { }
       activeLiveClient = null;
     }
 
     const currentLiveClient = {
       ws: clientWs,
       session: null as any,
-      cancelTools: (_reason: string) => {},
+      cancelTools: (_reason: string) => { },
       isClosed: false,
     };
     activeLiveClient = currentLiveClient;
@@ -2767,9 +2767,8 @@ async function startServer() {
                               name: callName,
                               response: {
                                 output: {
-                                  error: `Failed to execute ${callName}: ${
-                                    (err as any)?.message || err
-                                  }`,
+                                  error: `Failed to execute ${callName}: ${(err as any)?.message || err
+                                    }`,
                                 },
                               },
                             },
@@ -2862,7 +2861,7 @@ async function startServer() {
         );
         try {
           session.close();
-        } catch (e) {}
+        } catch (e) { }
         return;
       }
       currentLiveClient.session = session;
@@ -2901,7 +2900,7 @@ async function startServer() {
         orchestrator.handleInterruption();
         try {
           session.close();
-        } catch (e) {}
+        } catch (e) { }
         if (activeLiveClient === currentLiveClient) {
           activeLiveClient = null;
         }
@@ -2919,7 +2918,7 @@ async function startServer() {
           }),
         );
         clientWs.close();
-      } catch (e) {}
+      } catch (e) { }
     }
   });
 

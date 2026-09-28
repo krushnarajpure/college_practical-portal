@@ -1,10 +1,6 @@
-import api from './api';
+import { years } from '../data/portalData.js';
+import { createCollectionService } from './mockStore.js';
 
-const yearService = {
-  getAll: async () => api.get('/years'),
-  create: async (payload) => api.post('/years', payload),
-  update: async (id, payload) => api.put(`/years/${id}`, payload),
-  remove: async (id) => api.del(`/years/${id}`)
-};
+const yearService = createCollectionService({ key: 'portal-years', name: 'Years', initialValue: years });
 
 export default yearService;
