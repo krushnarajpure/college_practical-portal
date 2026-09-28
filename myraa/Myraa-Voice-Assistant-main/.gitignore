@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+
+# Production and intermediate desktop/web builds
+build/
+dist/
+release/
+release-build/
+release-package-final/
+agent_build/
+agent_dist/
+
+# Android build outputs & IDE (future/wrapper readiness)
+.gradle/
+local.properties
+*.apk
+*.aab
+!releases/*.apk
+!releases/*.exe
+
+# Environment & Secrets (NEVER commit real credentials)
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env.*
+!.env.example
+/.env.example
+*.pem
+*.key
+*.p12
+*.keystore
+*.jks
+
+# Local user runtime data & personal memory
+memories.json
+settings.json
+ShepamNotes.txt
+Desktop/
+Downloads/
+scratch_*
+scratch_test_app/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# OS & IDE temporary files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+.claude/
+

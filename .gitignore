@@ -1,0 +1,16 @@
+node_modules/
+__pycache__/
+*.py[cod]
+.env
+.env.local
+.env.*
+!.env.example
+frontend/.env
+backend/.env
+backend/.env.example
+myraa/Myraa-Voice-Assistant-main/.env.example
+frontend/dist/
+backend/uploads/
+**/secrets.json
+.DS_Store
+npm-debug.log*
