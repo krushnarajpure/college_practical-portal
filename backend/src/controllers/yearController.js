@@ -9,9 +9,10 @@ const normalizeStatus = (payload = {}) => {
 
 export const getAllYears = async (req, res, next) => {
   try {
-    const filter = req.user?.role === 'admin'
-      ? {}
-      : { status: 'active', academicLevel: { $in: [1, 2, 3, 4] } };
+    const requestedStatus = req.query?.status;
+    const filter = requestedStatus === 'active' || requestedStatus === 'inactive'
+      ? { status: requestedStatus }
+      : (req.user?.role === 'admin' ? {} : { status: 'active', academicLevel: { $in: [1, 2, 3, 4] } });
     const years = await Year.find(filter).sort({ order: 1, name: 1 });
     return res.status(200).json(successResponse('Years retrieved.', { years }));
   } catch (error) {

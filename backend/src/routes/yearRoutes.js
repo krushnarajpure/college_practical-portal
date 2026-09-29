@@ -5,7 +5,7 @@ import { requireRole } from '../middleware/roleMiddleware.js';
 
 const router = express.Router();
 
-router.get('/', authenticateUser, requireRole('admin', 'teacher'), getAllYears);
+router.get('/', authenticateUser, requireRole('admin', 'teacher', 'student'), getAllYears);
 router.post('/', authenticateUser, requireRole('admin'), createYear);
 router.put('/:id', authenticateUser, requireRole('admin'), updateYear);
 router.delete('/:id', authenticateUser, requireRole('admin'), deleteYear);

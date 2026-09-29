@@ -9,7 +9,10 @@ const normalizeStatus = (payload = {}) => {
 
 export const getAllDepartments = async (req, res, next) => {
   try {
-    const filter = req.user?.role === 'admin' ? {} : { status: 'active' };
+    const requestedStatus = req.query?.status;
+    const filter = requestedStatus === 'active' || requestedStatus === 'inactive'
+      ? { status: requestedStatus }
+      : (req.user?.role === 'admin' ? {} : { status: 'active' });
     const departments = await Department.find(filter).sort({ name: 1 });
     return res.status(200).json(successResponse('Departments retrieved.', { departments }));
   } catch (error) {

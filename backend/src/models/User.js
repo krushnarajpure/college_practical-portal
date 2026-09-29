@@ -15,6 +15,7 @@ const userSchema = new mongoose.Schema(
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
     yearId: { type: mongoose.Schema.Types.ObjectId, ref: 'Year', default: null },
     semesterId: { type: mongoose.Schema.Types.ObjectId, ref: 'Semester', default: null },
+    profilePhotoId: { type: mongoose.Schema.Types.ObjectId, default: null },
     assignedSubjects: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Subject' }],
     status: { type: String, enum: ['active', 'inactive', 'pending'], default: 'active' },
     createdAt: { type: Date, default: Date.now },

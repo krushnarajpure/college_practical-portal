@@ -10,7 +10,10 @@ const normalizeStatus = (payload = {}) => {
 
 export const getAllSemesters = async (req, res, next) => {
   try {
-    const filter = req.user?.role === 'admin' ? {} : { status: 'active' };
+    const requestedStatus = req.query?.status;
+    const filter = requestedStatus === 'active' || requestedStatus === 'inactive'
+      ? { status: requestedStatus }
+      : (req.user?.role === 'admin' ? {} : { status: 'active' });
     const semesters = await Semester.find(filter).populate('yearId').sort({ number: 1, name: 1 });
     return res.status(200).json(successResponse('Semesters retrieved.', { semesters }));
   } catch (error) {
