@@ -8,7 +8,7 @@ const startServer = async () => {
 
   app.listen(env.port, () => {
     console.log(`Server running on http://localhost:${env.port}`);
-    startMyraaService();
+    if (process.env.NODE_ENV !== 'production') startMyraaService();
   });
 };
 

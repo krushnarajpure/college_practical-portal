@@ -9,10 +9,11 @@ export function startMyraaService() {
   const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
   const myraaDirectory = path.resolve(currentDirectory, '../../../myraa/Myraa-Voice-Assistant-main');
   const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+  const myraaPort = process.env.MYRAA_PORT || '3001';
   try {
     myraaProcess = spawn(npmCommand, ['run', 'dev'], {
       cwd: myraaDirectory,
-      env: { ...process.env, MYRAA_PORT: process.env.MYRAA_PORT || '3001' },
+      env: { ...process.env, PORT: myraaPort, MYRAA_PORT: myraaPort },
       stdio: 'inherit',
       shell: process.platform === 'win32'
     });
