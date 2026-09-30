@@ -8,6 +8,9 @@ export default defineConfig(({ mode }) => {
   const wsPath = env.VITE_MYRAA_WS_PATH || (mode === 'production' ? '/live' : '/myraa-live');
   const wsUrl = env.VITE_MYRAA_WS_URL || '';
   const assetPrefix = env.VITE_MYRAA_ASSET_PREFIX || '/myraa-assets';
+  const defaultMyraaApiPrefix = mode === 'production'
+    ? 'https://college-practical-portal-myraa.onrender.com'
+    : '/myraa-api';
 
   return {
     plugins: [react()],
@@ -20,7 +23,7 @@ export default defineConfig(({ mode }) => {
       }
     },
     define: {
-      'import.meta.env.VITE_MYRAA_API_PREFIX': JSON.stringify(apiPrefix),
+      'import.meta.env.VITE_MYRAA_API_PREFIX': JSON.stringify(env.VITE_MYRAA_API_PREFIX || defaultMyraaApiPrefix),
       'import.meta.env.VITE_MYRAA_WS_PATH': JSON.stringify(wsPath),
       'import.meta.env.VITE_MYRAA_WS_URL': JSON.stringify(wsUrl),
       'import.meta.env.VITE_MYRAA_ASSET_PREFIX': JSON.stringify(assetPrefix)

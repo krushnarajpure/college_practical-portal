@@ -1,4 +1,5 @@
 import { ObjectId } from 'mongodb';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import User from '../models/User.js';
 import Practical from '../models/Practical.js';
 import { getGridFSBucket } from '../config/storage.js';
@@ -108,6 +109,50 @@ export const getPdfById = async (req, res, next) => {
     }));
   } catch (error) {
     return next(error);
+  }
+};
+
+export const getStudentPdfText = async (req, res, next) => {
+  let parsedPdf;
+  try {
+    const { pdf } = await getAuthorizedPdf(req);
+    const chunks = [];
+    const stream = getGridFSBucket().openDownloadStream(pdf.gridFsFileId);
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+
+    try {
+      parsedPdf = await getDocument({ data: new Uint8Array(Buffer.concat(chunks)), useSystemFonts: true }).promise;
+    } catch {
+      throw makeError('This practical PDF could not be read. It may be encrypted or damaged.', 422, 'PdfTextUnavailable');
+    }
+
+    const pages = [];
+    for (let pageNumber = 1; pageNumber <= parsedPdf.numPages; pageNumber += 1) {
+      const page = await parsedPdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .filter((item) => 'str' in item && item.str.trim())
+        .map((item) => item.str.trim())
+        .join(' ');
+      if (pageText) pages.push(pageText);
+      page.cleanup();
+    }
+
+    const text = pages.join('\n\n');
+    if (!text.trim()) throw makeError('This practical PDF has no selectable text. Scanned PDFs require OCR.', 422, 'PdfTextUnavailable');
+    return res.status(200).json(successResponse('Practical PDF text extracted.', {
+      pdfId: String(pdf._id),
+      fileName: pdf.originalFileName,
+      pageCount: parsedPdf.numPages,
+      text: text.slice(0, 30000),
+      truncated: text.length > 30000
+    }));
+  } catch (error) {
+    return next(error);
+  } finally {
+    if (parsedPdf) {
+      try { await parsedPdf.destroy(); } catch { /* PDF cleanup is best-effort. */ }
+    }
   }
 };
 

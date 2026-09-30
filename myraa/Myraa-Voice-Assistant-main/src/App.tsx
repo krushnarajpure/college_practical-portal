@@ -40,7 +40,22 @@ import { MyraaWakeWordDetector } from "./lib/wakeWord";
 
 const MYRAA_API_PREFIX = import.meta.env.VITE_MYRAA_API_PREFIX || "";
 
-export default function App() {
+interface PortalTools {
+  listPracticals: (args: { topic?: string }) => Promise<{
+    total: number;
+    practicals: Array<{ id: string; practicalNumber: number; title: string; subject: string; hasPdf: boolean }>;
+  }>;
+  readPracticalPdf: (args: { practicalId: string }) => Promise<{
+    data?: { fileName: string; pageCount: number; text: string; truncated: boolean };
+  }>;
+}
+
+interface AppProps {
+  portalTools?: PortalTools;
+  onOpenPortalPractical?: (practicalId: string) => void;
+}
+
+export default function App({ portalTools, onOpenPortalPractical }: AppProps = {}) {
   const [state, setState] = useState<LiveState>("disconnected");
 
   // Real-time Screen Sharing states
@@ -601,6 +616,34 @@ export default function App() {
       },
       onToolCall: (name, args, callback) => {
         console.log(`[App] Tool call triggered: ${name}`, args);
+
+        if (['listPortalPracticals', 'readPortalPracticalPdf', 'openPortalPracticalPdf'].includes(name)) {
+          void (async () => {
+            try {
+              if (!portalTools) throw new Error('Portal practical tools are available only inside the signed-in student website.');
+              if (name === 'listPortalPracticals') {
+                const result = await portalTools.listPracticals({ topic: String(args?.topic || '') });
+                callback({ result: JSON.stringify(result) });
+                return;
+              }
+              const practicalId = String(args?.practicalId || '');
+              if (!practicalId) throw new Error('Choose a practical from the student practical list first.');
+              if (name === 'readPortalPracticalPdf') {
+                const response = await portalTools.readPracticalPdf({ practicalId });
+                const pdf = response?.data;
+                if (!pdf?.text) throw new Error('No readable PDF text was returned.');
+                callback({ result: JSON.stringify({ fileName: pdf.fileName, pageCount: pdf.pageCount, truncated: pdf.truncated, text: pdf.text }) });
+                return;
+              }
+              if (!onOpenPortalPractical) throw new Error('In-site practical navigation is unavailable here.');
+              callback({ result: 'Opening this practical PDF inside the current College Practical Portal website.' });
+              onOpenPortalPractical(practicalId);
+            } catch (error) {
+              callback({ error: error instanceof Error ? error.message : 'Portal practical request failed.' });
+            }
+          })();
+          return;
+        }
 
         const browserTools = [
           "browserOpen",

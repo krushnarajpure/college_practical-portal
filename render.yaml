@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: college-practical-portal-myraa
+    runtime: node
+    plan: free
+    rootDir: myraa/Myraa-Voice-Assistant-main
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/config
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MYRAA_ALLOWED_ORIGINS
+        value: https://college-practical-portal.vercel.app
+      - key: GEMINI_API_KEY
+        sync: false

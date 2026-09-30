@@ -37,14 +37,21 @@ async function request(path, options = {}) {
   return parsed ?? { success: true, data: null };
 }
 
-async function requestBlob(path) {
+async function requestBlob(path, options = {}) {
+  const { method = 'GET', body, headers = {} } = options;
   const url = new URL(path.startsWith('http') ? path : `${API_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`);
   const token = typeof localStorage !== 'undefined'
     ? localStorage.getItem('college_practical_token')
     : null;
   const response = await fetch(url, {
+    method,
     credentials: 'include',
-    headers: token ? { Authorization: `Bearer ${token}` } : {}
+    headers: {
+      ...(body === undefined || body === null ? {} : { 'Content-Type': 'application/json' }),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...headers
+    },
+    ...(body === undefined || body === null ? {} : { body: JSON.stringify(body) })
   });
 
   if (!response.ok) {

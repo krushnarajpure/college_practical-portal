@@ -6,10 +6,10 @@ import Semester from '../models/Semester.js';
 import User from '../models/User.js';
 import { getAcademicDocumentBucket } from '../config/storage.js';
 import {
+  applyPdfEdits,
   convertPdf,
-  fillPdfForm,
-  generateFormFieldChanges,
-  getEditablePdfFields,
+  generatePdfEditChanges,
+  getEditablePdfContent,
   getPdfPageCount,
   readGridFsFile,
   saveDocumentVersion
@@ -267,8 +267,29 @@ export const getEditableFields = async (req, res, next) => {
       throw fail('Manual editing is currently available for fillable PDF forms only.', 422, 'DocumentEditingUnsupported');
     }
     const buffer = await readGridFsFile(document.originalFile.fileId);
-    const { fields } = await getEditablePdfFields(buffer);
-    return res.status(200).json(successResponse('Editable PDF fields retrieved.', { fields }));
+    const content = await getEditablePdfContent(buffer);
+    return res.status(200).json(successResponse('PDF edit content retrieved.', content));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const previewManualEdit = async (req, res, next) => {
+  try {
+    const document = await getAuthorizedDocument(req);
+    if (document.originalFile.mimeType !== 'application/pdf' && !document.originalFile.fileName.toLowerCase().endsWith('.pdf')) {
+      throw fail('Manual editing is available for PDF files only.', 415, 'DocumentEditingUnsupported');
+    }
+    const source = await readGridFsFile(document.originalFile.fileId);
+    const preview = await applyPdfEdits(source, {
+      formValues: req.body?.formValues || req.body?.values || {},
+      changes: req.body?.changes || []
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${document.name.replace(/[\r\n"\\]/g, '_')} (Preview).pdf"`);
+    res.setHeader('Content-Length', preview.buffer.length);
+    res.setHeader('Cache-Control', 'private, no-store');
+    return res.status(200).send(preview.buffer);
   } catch (error) {
     next(error);
   }
@@ -280,19 +301,37 @@ export const createManualEdit = async (req, res, next) => {
     if (document.originalFile.mimeType !== 'application/pdf' && !document.originalFile.fileName.toLowerCase().endsWith('.pdf')) {
       throw fail('Manual editing is currently available for fillable PDF forms only.', 422, 'DocumentEditingUnsupported');
     }
-    const values = req.body?.values;
-    if (!values || typeof values !== 'object' || Array.isArray(values)) throw fail('Provide field values to edit.', 400, 'InvalidManualEdit');
+    const formValues = req.body?.formValues || req.body?.values || {};
+    const changes = req.body?.changes || [];
     const source = await readGridFsFile(document.originalFile.fileId);
-    const edited = await fillPdfForm(source, values);
+    const edited = await applyPdfEdits(source, { formValues, changes });
     const version = await saveDocumentVersion(document, {
       buffer: edited.buffer,
       extension: '.pdf',
       mimeType: 'application/pdf',
       editType: 'manual',
-      instruction: 'Manual edit of fillable PDF fields',
-      userId: req.user.id
+      instruction: 'Manual PDF text edit',
+      userId: req.user.id,
+      changes: edited.changes
     });
-    return res.status(201).json(successResponse('Document edited successfully.', { version }));
+    return res.status(201).json(successResponse('Document edited successfully.', { documentId: document._id, version, changes: edited.changes }));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAiEditChanges = async (req, res, next) => {
+  try {
+    const document = await getAuthorizedDocument(req);
+    if (document.originalFile.mimeType !== 'application/pdf' && !document.originalFile.fileName.toLowerCase().endsWith('.pdf')) {
+      throw fail('AI editing is available for PDF files only.', 415, 'DocumentEditingUnsupported');
+    }
+    const instruction = String(req.body?.instruction || '').trim();
+    if (!instruction || instruction.length > 2000) throw fail('Describe the changes in 1 to 2000 characters.', 400, 'InvalidAiInstruction');
+    const source = await readGridFsFile(document.originalFile.fileId);
+    const content = await getEditablePdfContent(source);
+    const edit = await generatePdfEditChanges(instruction, content);
+    return res.status(200).json(successResponse('Gemini edit instructions generated.', edit));
   } catch (error) {
     next(error);
   }
@@ -307,18 +346,22 @@ export const createAiEdit = async (req, res, next) => {
       throw fail('AI visual editing is currently supported only for fillable PDF forms.', 422, 'DocumentEditingUnsupported');
     }
     const source = await readGridFsFile(document.originalFile.fileId);
-    const { fields } = await getEditablePdfFields(source);
-    const changes = await generateFormFieldChanges(instruction, fields);
-    const edited = await fillPdfForm(source, changes);
+    let edit = { changes: req.body?.changes, formValues: req.body?.formValues };
+    if (!Array.isArray(edit.changes) || !edit.formValues || typeof edit.formValues !== 'object') {
+      const content = await getEditablePdfContent(source);
+      edit = await generatePdfEditChanges(instruction, content);
+    }
+    const edited = await applyPdfEdits(source, edit);
     const version = await saveDocumentVersion(document, {
       buffer: edited.buffer,
       extension: '.pdf',
       mimeType: 'application/pdf',
       editType: 'ai',
       instruction,
-      userId: req.user.id
+      userId: req.user.id,
+      changes: edited.changes
     });
-    return res.status(201).json(successResponse('Document edited successfully.', { version }));
+    return res.status(201).json(successResponse('Document edited successfully.', { documentId: document._id, version, changes: edited.changes }));
   } catch (error) {
     next(error);
   }

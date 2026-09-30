@@ -8,6 +8,19 @@ const storedFileSchema = new mongoose.Schema({
   pageCount: { type: Number, default: null }
 }, { _id: false });
 
+const editChangeSchema = new mongoose.Schema({
+  itemId: { type: String, default: null },
+  field: { type: String, required: true, maxlength: 160 },
+  oldText: { type: String, default: '', maxlength: 1000 },
+  newText: { type: String, required: true, maxlength: 1000 },
+  pageNumber: { type: Number, default: null },
+  x: { type: Number, default: null },
+  y: { type: Number, default: null },
+  width: { type: Number, default: null },
+  height: { type: Number, default: null },
+  fontSize: { type: Number, default: null }
+}, { _id: false });
+
 const versionSchema = new mongoose.Schema({
   fileId: { type: mongoose.Schema.Types.ObjectId, required: true },
   fileName: { type: String, required: true },
@@ -16,6 +29,7 @@ const versionSchema = new mongoose.Schema({
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   editType: { type: String, enum: ['manual', 'ai', 'converted'], required: true },
   instruction: { type: String, default: '' },
+  changes: { type: [editChangeSchema], default: [] },
   createdAt: { type: Date, default: Date.now }
 });
 

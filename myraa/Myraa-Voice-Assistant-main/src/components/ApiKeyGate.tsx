@@ -29,6 +29,9 @@ export function ApiKeyGate({ children }: { children: ReactNode }) {
       try {
         const res = await fetch(`${MYRAA_API_PREFIX}/api/config`, { cache: "no-store" });
         if (!res.ok) throw new Error(`Myraa service returned HTTP ${res.status}.`);
+        if (!(res.headers.get("content-type") || "").includes("application/json")) {
+          throw new Error("Myraa API returned a web page instead of JSON. Configure the Myraa Render service URL in Vercel and redeploy.");
+        }
         const data = await res.json();
         if (cancelled) return;
         setPhase(data.hasApiKey ? "ready" : "needsKey");

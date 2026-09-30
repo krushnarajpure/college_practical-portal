@@ -45,8 +45,8 @@ function AcademicDocumentsPage({ role, notify }) {
   const isTeacher = role === 'teacher';
   const isUpload = isTeacher && (parts[2] === 'upload' || action === 'upload');
   const isTeacherEdit = isTeacher && action === 'edit';
-  const isEdit = !isTeacher && action === 'edit';
-  const isAiEdit = !isTeacher && action === 'ai-edit';
+  const isEdit = action === 'edit';
+  const isAiEdit = action === 'ai-edit';
   const isDetail = Boolean(documentId) && !isUpload;
   const [documents, setDocuments] = useState([]);
   const [document, setDocument] = useState(null);
@@ -55,9 +55,16 @@ function AcademicDocumentsPage({ role, notify }) {
   const [fields, setFields] = useState({ name: '', description: '', type: '', departmentId: '', yearId: '', semesterId: '' });
   const [catalog, setCatalog] = useState({ departments: [], years: [], semesters: [] });
   const [editableFields, setEditableFields] = useState([]);
+  const [staticTextItems, setStaticTextItems] = useState([]);
+  const [totalTextItems, setTotalTextItems] = useState(0);
+  const [pdfPageCount, setPdfPageCount] = useState(0);
   const [editValues, setEditValues] = useState({});
   const [originalEditValues, setOriginalEditValues] = useState({});
   const [previewChanges, setPreviewChanges] = useState(false);
+  const [editedPreviewUrl, setEditedPreviewUrl] = useState('');
+  const [manualPlacements, setManualPlacements] = useState([]);
+  const [manualPlacement, setManualPlacement] = useState({ pageNumber: '1', x: '72', y: '72', newText: '' });
+  const [pendingAiEdit, setPendingAiEdit] = useState(null);
   const [metadataEditing, setMetadataEditing] = useState(false);
   const [metadata, setMetadata] = useState({ name: '', description: '', type: '', departmentId: '', yearId: '', semesterId: '' });
   const [instruction, setInstruction] = useState('');
@@ -129,18 +136,24 @@ function AcademicDocumentsPage({ role, notify }) {
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
 
   useEffect(() => {
-    if (!isEdit || !documentId) return;
+    if (!(isEdit || isAiEdit) || !documentId) return;
     let active = true;
     academicDocumentService.getEditableFields(documentId).then((response) => {
       if (!active) return;
       const items = response?.data?.fields || [];
+      const textItems = response?.data?.textItems || [];
       setEditableFields(items);
+      setStaticTextItems(textItems);
+      setTotalTextItems(response?.data?.totalTextItems || textItems.length);
+      setPdfPageCount(response?.data?.pageCount || 0);
       const values = Object.fromEntries(items.map((item) => [item.name, item.value]));
       setOriginalEditValues(values);
       setEditValues(values);
     }).catch((editError) => { if (active) setError(editError.message || 'Manual editing is unavailable for this file.'); });
     return () => { active = false; };
-  }, [isEdit, documentId]);
+  }, [isEdit, isAiEdit, documentId]);
+
+  useEffect(() => () => { if (editedPreviewUrl) URL.revokeObjectURL(editedPreviewUrl); }, [editedPreviewUrl]);
 
   const yearOptions = yearLevels.map((level) => ({
     ...level,
@@ -250,14 +263,92 @@ function AcademicDocumentsPage({ role, notify }) {
   const createEdit = async () => {
     setBusy(true); setError('');
     try {
+      let edits = collectPdfEdits();
+      if (isAiEdit) {
+        if (!pendingAiEdit) {
+          const proposal = await academicDocumentService.getAiEditChanges(documentId, instruction);
+          edits = proposal?.data || {};
+        } else edits = pendingAiEdit;
+      }
       const response = isAiEdit
-        ? await academicDocumentService.aiEdit(documentId, instruction)
-        : await academicDocumentService.manualEdit(documentId, editValues);
+        ? await academicDocumentService.aiEdit(documentId, instruction, edits)
+        : await academicDocumentService.manualEdit(documentId, edits);
       setSuccess(response?.message || 'Document edited successfully.');
       notify?.(response?.message || 'Document edited successfully.');
       navigate(`${base}/${documentId}`);
     } catch (editError) { setError(editError.message || 'Unable to edit this document.'); }
     finally { setBusy(false); }
+  };
+
+  const collectPdfEdits = () => ({
+    formValues: Object.fromEntries(editableFields
+      .filter((item) => editValues[item.name] !== originalEditValues[item.name])
+      .map((item) => [item.name, editValues[item.name]])),
+    changes: [
+      ...staticTextItems.filter((item) => editValues[item.id] !== undefined && editValues[item.id] !== item.text)
+        .map((item) => ({ itemId: item.id, field: item.text.slice(0, 160), oldText: item.text, newText: editValues[item.id] })),
+      ...manualPlacements
+    ]
+  });
+
+  const previewPdfEdits = async () => {
+    setBusy(true); setError(''); setSuccess('');
+    try {
+      let edits = collectPdfEdits();
+      if (isAiEdit) {
+        if (!instruction.trim()) throw new Error('Describe the changes for Gemini first.');
+        const proposal = await academicDocumentService.getAiEditChanges(documentId, instruction);
+        edits = proposal?.data || {};
+        setPendingAiEdit(edits);
+      }
+      if (!edits.changes?.length && !Object.keys(edits.formValues || {}).length) {
+        throw new Error('Choose at least one text change before previewing.');
+      }
+      const blob = await academicDocumentService.previewManualEdit(documentId, edits);
+      const nextUrl = URL.createObjectURL(blob);
+      setEditedPreviewUrl((current) => { if (current) URL.revokeObjectURL(current); return nextUrl; });
+      setPreviewChanges(true);
+      setSuccess(isAiEdit ? 'Gemini changes are ready to review.' : 'Edited PDF preview ready.');
+    } catch (previewError) {
+      setError(previewError.message || 'Unable to create the edited PDF preview.');
+    } finally { setBusy(false); }
+  };
+
+  const addManualPlacement = () => {
+    const pageNumber = Number(manualPlacement.pageNumber);
+    const x = Number(manualPlacement.x);
+    const y = Number(manualPlacement.y);
+    const newText = manualPlacement.newText.trim();
+    if (!newText || !Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > pdfPageCount || !Number.isFinite(x) || !Number.isFinite(y)) {
+      setError('Enter text, a valid page number, and numeric X/Y coordinates.');
+      return;
+    }
+    setManualPlacements((current) => [...current, { pageNumber, x, y, newText, field: 'Added text' }]);
+    setManualPlacement((current) => ({ ...current, newText: '' }));
+    setEditedPreviewUrl((current) => { if (current) URL.revokeObjectURL(current); return ''; });
+    setPreviewChanges(false);
+    setError('');
+  };
+
+  const clearEditedPreview = () => {
+    setPreviewChanges(false);
+    setPendingAiEdit(null);
+    setEditedPreviewUrl((current) => { if (current) URL.revokeObjectURL(current); return ''; });
+  };
+
+  const updateEditValue = (field, value) => {
+    setEditValues((current) => ({ ...current, [field]: value }));
+    clearEditedPreview();
+  };
+
+  const resetPdfEdits = () => {
+    setEditValues(originalEditValues);
+    setManualPlacements([]);
+    setInstruction('');
+    setManualPlacement({ pageNumber: '1', x: '72', y: '72', newText: '' });
+    setError('');
+    setSuccess('');
+    clearEditedPreview();
   };
 
   const saveMetadata = async () => {
@@ -314,6 +405,9 @@ function AcademicDocumentsPage({ role, notify }) {
       setShowStudents(true);
     } catch (studentsError) { setError(studentsError.message || 'Unable to load eligible students.'); }
   };
+
+  const currentPdfEdits = collectPdfEdits();
+  const hasPdfEdits = currentPdfEdits.changes.length > 0 || Object.keys(currentPdfEdits.formValues).length > 0;
 
   if (loading) return <section className="surface academic-doc-loading" aria-label="Loading academic documents"><LoaderCircle className="spinner" size={20} /><span>Loading academic documents...</span></section>;
   if (isUpload) return <>
@@ -374,10 +468,21 @@ function AcademicDocumentsPage({ role, notify }) {
 
   if (isEdit || isAiEdit) return <>
     {pageTitle(isAiEdit ? 'GEMINI ASSISTED' : 'DOCUMENT EDITOR', isAiEdit ? 'AI Edit with Gemini' : 'Manual Edit', document?.name || 'Create a separate edited version. The teacher-uploaded original remains unchanged.', <Link to={`${base}/${documentId}`} className="button button-secondary"><ArrowLeft size={15} />Back to document</Link>)}
-    {isAiEdit ? <section className="surface academic-doc-editor"><label className="form-field"><span>Describe the changes</span><textarea rows="5" maxLength="2000" value={instruction} onChange={(event) => setInstruction(event.target.value)} placeholder="Change the student name and roll number. Keep everything else unchanged." /></label><div className="academic-doc-prompts">{quickPrompts.map((prompt) => <button className="button button-secondary" type="button" key={prompt} onClick={() => setInstruction((value) => `${value}${value ? ' ' : ''}${prompt}.`)}>{prompt}</button>)}</div></section>
-      : <section className="surface academic-doc-editor">{error && <p className="form-error" role="alert">{error}</p>}{editableFields.map((item) => <label className="form-field" key={item.name}><span>{item.name}</span>{item.type === 'PDFCheckBox' ? <input type="checkbox" checked={editValues[item.name] === 'true'} onChange={(event) => setEditValues({ ...editValues, [item.name]: String(event.target.checked) })} /> : item.options?.length ? <select value={editValues[item.name] ?? ''} onChange={(event) => setEditValues({ ...editValues, [item.name]: event.target.value })}><option value="">Select a value</option>{item.options.map((option) => <option key={option}>{option}</option>)}</select> : <input value={editValues[item.name] ?? ''} onChange={(event) => setEditValues({ ...editValues, [item.name]: event.target.value })} />}</label>)}{!error && editableFields.length === 0 && <p>Looking for fillable fields...</p>}{previewChanges && <div className="academic-doc-change-preview"><strong>Preview Changes</strong>{editableFields.filter((item) => editValues[item.name] !== originalEditValues[item.name]).map((item) => <p key={item.name}><span>{item.name}</span><s>{originalEditValues[item.name] || 'Empty'}</s><b>{editValues[item.name] || 'Empty'}</b></p>)}{!editableFields.some((item) => editValues[item.name] !== originalEditValues[item.name]) && <p>No fields have changed.</p>}</div>}</section>}
-    {error && isAiEdit && <p className="form-error" role="alert">{error}</p>}
-    <div className="academic-doc-submit">{!isAiEdit && <button className="button button-secondary" onClick={() => setPreviewChanges((value) => !value)}><Eye size={15} />Preview changes</button>}<button className="button button-secondary" onClick={() => { if (isAiEdit) setInstruction(''); else { setEditValues(originalEditValues); setPreviewChanges(false); } }}>Reset</button><button className="button button-primary" disabled={busy || (isAiEdit ? !instruction.trim() : !editableFields.length)} onClick={createEdit}>{busy ? <><LoaderCircle className="spinner" size={16} />Generating...</> : <>{isAiEdit ? <Sparkles size={16} /> : <Check size={16} />}{isAiEdit ? 'Generate edited document' : 'Apply changes'}</>}</button></div>
+    {isAiEdit ? <section className="surface academic-doc-editor">
+      <label className="form-field academic-doc-wide"><span>Describe the changes</span><textarea rows="5" maxLength="2000" value={instruction} onChange={(event) => { setInstruction(event.target.value); clearEditedPreview(); }} placeholder="Change the student name to Krushna Rajpure and roll number to 112." /></label>
+      <div className="academic-doc-prompts">{quickPrompts.map((prompt) => <button className="button button-secondary" type="button" key={prompt} onClick={() => { setInstruction((value) => `${value}${value ? ' ' : ''}${prompt}.`); clearEditedPreview(); }}>{prompt}</button>)}</div>
+    </section> : <section className="surface academic-doc-editor">
+      {editableFields.map((item) => <label className="form-field" key={item.name}><span>{item.name}</span>{item.type === 'PDFCheckBox' ? <input type="checkbox" checked={editValues[item.name] === 'true'} onChange={(event) => updateEditValue(item.name, String(event.target.checked))} /> : item.options?.length ? <select value={editValues[item.name] ?? ''} onChange={(event) => updateEditValue(item.name, event.target.value)}><option value="">Select a value</option>{item.options.map((option) => <option key={option}>{option}</option>)}</select> : <input value={editValues[item.name] ?? ''} onChange={(event) => updateEditValue(item.name, event.target.value)} />}</label>)}
+      {staticTextItems.map((item) => <label className="form-field academic-doc-static-text" key={item.id}><span>Page {item.pageNumber} · {item.text}</span><small>Position {Math.round(item.x)}, {Math.round(item.y)} · {Math.round(item.fontSize)} pt</small><input value={editValues[item.id] ?? ''} onChange={(event) => updateEditValue(item.id, event.target.value)} placeholder={`Replace: ${item.text}`} /></label>)}
+      {totalTextItems > staticTextItems.length && <p className="academic-doc-wide">Showing the first {staticTextItems.length} of {totalTextItems} detected text items.</p>}
+      {totalTextItems === 0 && <p className="academic-doc-wide" role="status">No selectable text was detected. This may be a scanned PDF. You can place new text manually below, but image-based original text cannot be erased automatically.</p>}
+      {totalTextItems === 0 && <section className="academic-doc-manual-placement academic-doc-wide"><h2>Place text manually</h2><label className="form-field"><span>Page</span><input type="number" min="1" max={pdfPageCount || undefined} value={manualPlacement.pageNumber} onChange={(event) => setManualPlacement({ ...manualPlacement, pageNumber: event.target.value })} /></label><label className="form-field"><span>X position (PDF points)</span><input type="number" min="0" value={manualPlacement.x} onChange={(event) => setManualPlacement({ ...manualPlacement, x: event.target.value })} /></label><label className="form-field"><span>Y position (PDF points)</span><input type="number" min="0" value={manualPlacement.y} onChange={(event) => setManualPlacement({ ...manualPlacement, y: event.target.value })} /></label><label className="form-field"><span>Text to place</span><input value={manualPlacement.newText} onChange={(event) => setManualPlacement({ ...manualPlacement, newText: event.target.value })} /></label><button className="button button-secondary" type="button" onClick={addManualPlacement}>Add text</button>{manualPlacements.map((item, index) => <div className="academic-doc-placement-item" key={`${item.pageNumber}-${index}`}><span>Page {item.pageNumber} · ({item.x}, {item.y}) · {item.newText}</span><button className="button button-secondary" type="button" onClick={() => { setManualPlacements((current) => current.filter((_, itemIndex) => itemIndex !== index)); clearEditedPreview(); }}>Remove</button></div>)}</section>}
+    </section>}
+    {error && <p className="form-error" role="alert">{error}</p>}
+    {success && <p className="form-success" role="status">{success}</p>}
+    {previewChanges && isAiEdit && pendingAiEdit && <section className="surface academic-doc-change-preview"><strong>Gemini proposed changes</strong>{(pendingAiEdit.changes || []).map((change, index) => <p key={`${change.itemId}-${index}`}><span>{change.field}</span><s>{change.oldText || 'Empty'}</s><b>{change.newText}</b></p>)}{Object.entries(pendingAiEdit.formValues || {}).map(([field, value]) => <p key={field}><span>{field}</span><b>{value}</b></p>)}</section>}
+    <section className="surface academic-doc-preview academic-doc-edit-preview"><div className="academic-doc-preview-heading"><div><span className="eyebrow">{previewChanges && editedPreviewUrl ? 'EDITED PDF PREVIEW' : 'ORIGINAL PDF PREVIEW'}</span><strong>{document?.fileName || document?.originalFile?.fileName || document?.name}</strong></div></div>{(previewChanges && editedPreviewUrl) || previewUrl ? <iframe title={previewChanges && editedPreviewUrl ? 'Edited PDF preview' : 'Original PDF preview'} src={previewChanges && editedPreviewUrl ? editedPreviewUrl : previewUrl} /> : <div className="academic-doc-no-preview"><FileText size={30} /><strong>PDF preview unavailable</strong></div>}</section>
+    <div className="academic-doc-submit"><button className="button button-secondary" type="button" disabled={busy || (isAiEdit ? !instruction.trim() : !hasPdfEdits)} onClick={previewPdfEdits}><Eye size={15} />Preview Changes</button><button className="button button-secondary" type="button" disabled={busy} onClick={resetPdfEdits}>Reset</button><button className="button button-primary" type="button" disabled={busy || (isAiEdit ? !pendingAiEdit : !hasPdfEdits)} onClick={createEdit}>{busy ? <><LoaderCircle className="spinner" size={16} />Applying...</> : <>{isAiEdit ? <Sparkles size={16} /> : <Check size={16} />}Apply Changes</>}</button></div>
   </>;
 
   const fileVersions = document?.versions || [];
@@ -387,7 +492,7 @@ function AcademicDocumentsPage({ role, notify }) {
     {isTeacher && <section className="surface academic-doc-manage">{metadataEditing ? <><div className="academic-doc-manage-fields"><label className="form-field"><span>Document name</span><input value={metadata.name} onChange={(event) => setMetadata({ ...metadata, name: event.target.value })} /></label><label className="form-field"><span>Document type</span><select value={metadata.type} onChange={(event) => setMetadata({ ...metadata, type: event.target.value })}>{documentTypes.map((type) => <option key={type} value={type}>{type === 'Other Document' ? 'Other' : type}</option>)}</select></label><label className="form-field"><span>Department</span><select required value={metadata.departmentId} onChange={(event) => updateMetadataTarget('departmentId', event.target.value)}><option value="">Select department</option>{catalog.departments.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select></label><label className="form-field"><span>Year</span><select required value={metadata.yearId} onChange={(event) => updateMetadataTarget('yearId', event.target.value)}><option value="">Select year</option>{yearOptions.map((item) => <option key={item.level} value={item.record?._id || ''} disabled={!item.record}>{item.name}</option>)}</select></label><label className="form-field"><span>Semester</span><select required value={metadata.semesterId} disabled={!metadata.yearId} onChange={(event) => updateMetadataTarget('semesterId', event.target.value)}><option value="">Select semester</option>{metadataSemesters.map((item) => <option key={item._id} value={item._id}>{semesterLabel(item)}</option>)}</select></label><label className="form-field"><span>Description</span><input value={metadata.description} onChange={(event) => setMetadata({ ...metadata, description: event.target.value })} /></label></div><div className="academic-doc-submit"><button className="button button-secondary" onClick={() => setMetadataEditing(false)}>Cancel</button><button className="button button-primary" disabled={busy || !metadata.name.trim() || !metadata.departmentId || !metadata.yearId || !metadata.semesterId} onClick={saveMetadata}>{busy ? 'Saving...' : 'Save details'}</button></div></> : <button className="button button-secondary" onClick={() => setMetadataEditing(true)}><FileText size={15} />Edit document details</button>}</section>}
     <div className="academic-doc-detail-layout"><section className="surface academic-doc-preview"><div className="academic-doc-preview-heading"><div><span className="eyebrow">DOCUMENT PREVIEW</span><strong>{document?.fileName || document?.originalFile?.fileName}</strong></div><button className="button button-secondary" onClick={() => downloadFile()}><Download size={15} />Download</button></div>{previewUrl && isPdf(document) ? <iframe title={`${document?.name} PDF preview`} src={previewUrl} /> : previewUrl && isImage(document) ? <img src={previewUrl} alt={document?.name || 'Academic document'} /> : <div className="academic-doc-no-preview"><FileText size={30} /><strong>Preview unavailable for this format</strong><span>Download the original file to open it.</span></div>}</section>
       <aside className="surface academic-doc-metadata"><h2>Document details</h2><dl><div><dt>Type</dt><dd>{document?.type}</dd></div><div><dt>Department</dt><dd>{departmentName || '—'}</dd></div><div><dt>Year / semester</dt><dd>{[yearName, semesterName].filter(Boolean).join(' · ') || '—'}</dd></div><div><dt>Uploaded by</dt><dd>{document?.uploadedBy?.name || 'Teacher'}</dd></div><div><dt>Upload date</dt><dd>{formatDate(document?.uploadedAt || document?.createdAt)}</dd></div><div><dt>File size</dt><dd>{formatSize(document?.fileSize || document?.originalFile?.fileSize)}</dd></div><div><dt>Pages</dt><dd>{document?.pageCount || document?.originalFile?.pageCount || 'Not available'}</dd></div></dl><div className="academic-doc-action-list"><button className="button button-primary" onClick={() => downloadFile()}><Download size={15} />Download original</button>{!isTeacher && isPdf(document) && <><Link className="button button-secondary" to={`${base}/${documentId}/edit`}><FileText size={15} />Manual edit</Link><Link className="button button-secondary" to={`${base}/${documentId}/ai-edit`}><Sparkles size={15} />AI edit with Gemini</Link><button className="button button-secondary" disabled={busy} onClick={() => convert('word')}><BookOpen size={15} />{busy ? 'Converting...' : 'Convert to Word'}</button><button className="button button-secondary" disabled={busy} onClick={() => convert('excel')}><FileText size={15} />{busy ? 'Converting...' : 'Convert to Excel'}</button></>}{!isTeacher && <button className="button button-secondary" onClick={async () => { try { if (navigator.share) await navigator.share({ title: document?.name, url: window.location.href }); else { await navigator.clipboard.writeText(window.location.href); setSuccess('Link copied.'); } } catch { setError('Unable to share this document.'); } }}><Link2 size={15} />Share document</button>}</div></aside></div>
-    {fileVersions.length > 0 && <section className="surface academic-doc-versions"><h2>Edited and converted versions</h2>{fileVersions.map((version) => <div key={version._id}><span><strong>{version.fileName}</strong><small>{version.editType} · {formatDate(version.createdAt)}</small></span><div className="table-actions">{version.mimeType === 'application/pdf' && <button className="button button-secondary" onClick={() => previewVersion(version._id)}><Eye size={14} />View</button>}<button className="button button-secondary" onClick={() => downloadFile(version._id)}><Download size={14} />Download</button></div></div>)}</section>}
+    {fileVersions.length > 0 && <section className="surface academic-doc-versions"><h2>Edited and converted versions</h2>{fileVersions.map((version) => <div key={version._id}><span><strong>{version.fileName}</strong><small>{version.editType} · {formatDate(version.createdAt)}</small>{version.changes?.length > 0 && <small className="academic-doc-version-changes">{version.changes.map((change) => `${change.field}: ${change.oldText || 'Empty'} -> ${change.newText}`).join(' · ')}</small>}</span><div className="table-actions">{version.mimeType === 'application/pdf' && <button className="button button-secondary" onClick={() => previewVersion(version._id)}><Eye size={14} />View</button>}<button className="button button-secondary" onClick={() => downloadFile(version._id)}><Download size={14} />Download</button></div></div>)}</section>}
   </>;
 }
 
