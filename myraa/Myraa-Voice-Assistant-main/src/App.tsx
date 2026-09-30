@@ -38,6 +38,8 @@ import {
 } from "./lib/settingsStore";
 import { MyraaWakeWordDetector } from "./lib/wakeWord";
 
+const MYRAA_API_PREFIX = import.meta.env.VITE_MYRAA_API_PREFIX || "";
+
 export default function App() {
   const [state, setState] = useState<LiveState>("disconnected");
 
@@ -522,7 +524,7 @@ export default function App() {
 
   // Fetch initial recollections from backend database
   useEffect(() => {
-    fetch("/api/memories")
+    fetch(`${MYRAA_API_PREFIX}/api/memories`)
       .then((res) => res.json())
       .then((data) => {
         if (Array.isArray(data)) {
@@ -539,7 +541,7 @@ export default function App() {
     text: string,
   ) => {
     try {
-      const resp = await fetch("/api/memories", {
+      const resp = await fetch(`${MYRAA_API_PREFIX}/api/memories`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ category, text }),
@@ -555,7 +557,7 @@ export default function App() {
 
   const handleDeleteMemory = async (id: string) => {
     try {
-      const resp = await fetch(`/api/memories/${id}`, {
+      const resp = await fetch(`${MYRAA_API_PREFIX}/api/memories/${id}`, {
         method: "DELETE",
       });
       const resObj = await resp.json();

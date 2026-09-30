@@ -4,6 +4,7 @@ import { env } from './env.js';
 
 export const storageConfig = {
   bucketName: 'practicalPDFs',
+  academicDocumentBucketName: 'academicDocuments',
   profilePhotoBucketName: 'profilePhotos',
   maxFileSize: env.maxPdfSizeBytes ?? 25 * 1024 * 1024,
   profilePhotoMaxFileSize: 5 * 1024 * 1024,
@@ -14,12 +15,25 @@ export const storageConfig = {
 };
 
 let practicalPdfBucket;
+let academicDocumentBucket;
 let profilePhotoBucket;
 
 export function initializeGridFSBucket(db = mongoose.connection.db) {
   if (!db) throw new Error('MongoDB must be connected before initializing GridFS.');
   practicalPdfBucket = new GridFSBucket(db, { bucketName: storageConfig.bucketName });
   return practicalPdfBucket;
+}
+
+export function getAcademicDocumentBucket() {
+  if (academicDocumentBucket) return academicDocumentBucket;
+  if (!mongoose.connection.db) {
+    throw Object.assign(new Error('Academic document storage is unavailable because MongoDB is not connected.'), {
+      name: 'MongoNotConnectedError',
+      statusCode: 503
+    });
+  }
+  academicDocumentBucket = new GridFSBucket(mongoose.connection.db, { bucketName: storageConfig.academicDocumentBucketName });
+  return academicDocumentBucket;
 }
 
 export function initializeProfilePhotoBucket(db = mongoose.connection.db) {

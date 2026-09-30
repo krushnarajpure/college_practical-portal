@@ -156,7 +156,16 @@ export class MyraaAudioSession {
     this.setState("connecting");
 
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const ws = new WebSocket(`${protocol}//${window.location.host}/live`);
+    const wsPath = import.meta.env.VITE_MYRAA_WS_PATH || "/live";
+    const apiPrefix = import.meta.env.VITE_MYRAA_API_PREFIX || "";
+    const configuredWsUrl = import.meta.env.VITE_MYRAA_WS_URL;
+    const serviceOrigin = /^https?:\/\//i.test(apiPrefix)
+      ? new URL(apiPrefix).origin
+      : `${window.location.protocol}//${window.location.host}`;
+    const serviceProtocol = serviceOrigin.startsWith("https:") ? "wss:" : "ws:";
+    const ws = new WebSocket(
+      configuredWsUrl || `${serviceProtocol}//${new URL(serviceOrigin).host}${wsPath}`,
+    );
     this.ws = ws;
 
     ws.onopen = async () => {

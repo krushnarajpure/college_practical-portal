@@ -35,6 +35,7 @@ export const DEFAULT_SETTINGS: MyraaSettings = {
 };
 
 const STORAGE_KEY = "myraa.settings.v2";
+const MYRAA_API_PREFIX = import.meta.env.VITE_MYRAA_API_PREFIX || "";
 
 /** Settings keys that the browser should never persist (security). */
 const NEVER_PERSIST: ReadonlySet<keyof MyraaSettings> = new Set([]);
@@ -82,7 +83,7 @@ export function saveSettings(patch: Partial<MyraaSettings>): MyraaSettings {
 /** Push settings to the backend (server.ts persists to settings.json). */
 async function syncSettingsToBackend(settings: MyraaSettings): Promise<void> {
   try {
-    await fetch("/api/settings", {
+    await fetch(`${MYRAA_API_PREFIX}/api/settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(settings),

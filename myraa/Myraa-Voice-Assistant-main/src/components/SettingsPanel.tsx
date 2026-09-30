@@ -19,6 +19,8 @@ import {
   saveSettings,
 } from "../lib/settingsStore";
 
+const MYRAA_API_PREFIX = import.meta.env.VITE_MYRAA_API_PREFIX || "";
+
 interface SettingsPanelProps {
   isOpen: boolean;
   onClose: () => void;
@@ -108,7 +110,7 @@ export function SettingsPanel({ isOpen, onClose, settings, onChange, themeColor 
       } catch {
         // Cross-origin may fail; try the server proxy as a fallback.
         try {
-          const res2 = await fetch("/api/agent-health", { cache: "no-store" });
+          const res2 = await fetch(`${MYRAA_API_PREFIX}/api/agent-health`, { cache: "no-store" });
           if (res2.ok) {
             const d = await res2.json();
             setAgentHealth({ online: !!d.online, toolCount: d.tool_count });
@@ -230,7 +232,7 @@ export function SettingsPanel({ isOpen, onClose, settings, onChange, themeColor 
                       onChange({ autoStart: v });
                       // Persist + push to backend; the desktop agent flips the
                       // HKCU Run registry key. We just record intent here.
-                      void fetch("/api/settings", {
+                      void fetch(`${MYRAA_API_PREFIX}/api/settings`, {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ autoStart: v }),

@@ -12,31 +12,37 @@
 import { useEffect, useState, type ReactNode, type FormEvent } from "react";
 import { KeyRound, Loader2, ExternalLink, ShieldCheck } from "lucide-react";
 
-type Phase = "checking" | "needsKey" | "ready";
+const MYRAA_API_PREFIX = import.meta.env.VITE_MYRAA_API_PREFIX || "";
+
+type Phase = "checking" | "needsKey" | "ready" | "offline";
 
 export function ApiKeyGate({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>("checking");
   const [value, setValue] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch("/api/config", { cache: "no-store" });
+        const res = await fetch(`${MYRAA_API_PREFIX}/api/config`, { cache: "no-store" });
+        if (!res.ok) throw new Error(`Myraa service returned HTTP ${res.status}.`);
         const data = await res.json();
         if (cancelled) return;
         setPhase(data.hasApiKey ? "ready" : "needsKey");
-      } catch {
-        // Backend not up yet — assume onboarding needed rather than hard-fail.
-        if (!cancelled) setPhase("needsKey");
+      } catch (checkError) {
+        if (!cancelled) {
+          setError(checkError instanceof Error ? checkError.message : "Could not connect to the Myraa service.");
+          setPhase("offline");
+        }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [retryCount]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -45,7 +51,7 @@ export function ApiKeyGate({ children }: { children: ReactNode }) {
     setSubmitting(true);
     setError(null);
     try {
-      const res = await fetch("/api/config/apikey", {
+      const res = await fetch(`${MYRAA_API_PREFIX}/api/config/apikey`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ apiKey: key }),
@@ -62,6 +68,26 @@ export function ApiKeyGate({ children }: { children: ReactNode }) {
   }
 
   if (phase === "ready") return <>{children}</>;
+
+  if (phase === "offline") {
+    return (
+      <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#050509] p-6 text-white">
+        <section className="w-[min(92vw,460px)] rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center shadow-[0_30px_80px_rgba(0,0,0,0.6)]">
+          <h1 className="text-xl font-semibold">Myraa service unavailable</h1>
+          <p className="mt-3 text-sm leading-relaxed text-white/60" role="alert">
+            {error || "Could not connect to the Myraa service. Check the deployed service URL and try again."}
+          </p>
+          <button
+            type="button"
+            onClick={() => { setError(null); setPhase("checking"); setRetryCount((count) => count + 1); }}
+            className="mt-6 w-full rounded-xl bg-gradient-to-r from-indigo-500 to-cyan-500 px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110"
+          >
+            Retry connection
+          </button>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-[#050509] text-white">
@@ -86,7 +112,7 @@ export function ApiKeyGate({ children }: { children: ReactNode }) {
             <h1 className="text-xl font-semibold tracking-tight">Welcome to MYRAA</h1>
             <p className="mt-2 text-sm leading-relaxed text-white/55">
               MYRAA runs on your own Google Gemini API key. Paste it below to get
-              started — it stays on this computer and is never shared.
+              started. It is stored on this Myraa service and is never returned to the browser.
             </p>
           </div>
 
@@ -125,7 +151,7 @@ export function ApiKeyGate({ children }: { children: ReactNode }) {
 
           <div className="mt-5 flex items-center justify-between text-xs text-white/40">
             <span className="inline-flex items-center gap-1.5">
-              <ShieldCheck className="h-3.5 w-3.5" /> Stored locally only
+              <ShieldCheck className="h-3.5 w-3.5" /> Stored on Myraa service
             </span>
             <a
               href="https://aistudio.google.com/app/apikey"

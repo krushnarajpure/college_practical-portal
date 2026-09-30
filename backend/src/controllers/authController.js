@@ -22,6 +22,7 @@ export const registerUser = async (req, res, next) => {
       departmentId,
       yearId,
       semesterId,
+      academicYear = '',
       studentId = '',
       employeeId = ''
     } = req.body;
@@ -75,7 +76,8 @@ export const registerUser = async (req, res, next) => {
       employeeId: role === 'teacher' ? employeeId.trim() : '',
       departmentId: role === 'student' || role === 'teacher' ? departmentId || null : null,
       yearId: role === 'student' ? yearId || null : null,
-      semesterId: role === 'student' ? semesterId || null : null
+      semesterId: role === 'student' ? semesterId || null : null,
+      academicYear: role === 'student' ? String(academicYear).trim() : ''
     });
 
     const token = generateToken(user);

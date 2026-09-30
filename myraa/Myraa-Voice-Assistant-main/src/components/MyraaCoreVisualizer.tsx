@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { MyraaAudioSession, LiveState } from "../lib/audio";
 import { Sparkles } from "lucide-react";
 
+const MYRAA_ASSET_PREFIX = import.meta.env.VITE_MYRAA_ASSET_PREFIX || "";
+
 export type MyraaEmotion =
   | "idle"
   | "happy"
@@ -379,7 +381,7 @@ export const MyraaCoreVisualizer: React.FC<MyraaCoreVisualizerProps> = ({
           {/* IDLE VIDEO */}
           <video
             ref={idleVideoRef}
-            src="/assets/idle.mp4"
+            src={`${MYRAA_ASSET_PREFIX}/assets/idle.mp4`}
             loop
             muted
             playsInline
@@ -401,7 +403,7 @@ export const MyraaCoreVisualizer: React.FC<MyraaCoreVisualizerProps> = ({
           {/* THINKING VIDEO */}
           <video
             ref={thinkingVideoRef}
-            src="/assets/thinking.mp4"
+            src={`${MYRAA_ASSET_PREFIX}/assets/thinking.mp4`}
             loop
             muted
             playsInline
@@ -422,7 +424,7 @@ export const MyraaCoreVisualizer: React.FC<MyraaCoreVisualizerProps> = ({
           {/* TALKING VIDEO */}
           <video
             ref={talkingVideoRef}
-            src="/assets/talking.mp4"
+            src={`${MYRAA_ASSET_PREFIX}/assets/talking.mp4`}
             loop
             muted
             playsInline
@@ -446,7 +448,7 @@ export const MyraaCoreVisualizer: React.FC<MyraaCoreVisualizerProps> = ({
           {/* FALLBACK IMAGE AVATAR IF VIDEOS FAIL */}
           {hasError && (
             <img
-              src="/assets/pictures/myraa.png"
+              src={`${MYRAA_ASSET_PREFIX}/assets/pictures/myraa.png`}
               alt="Myraa"
               className="absolute inset-0 w-full h-full object-contain rounded-[2.5rem] select-none pointer-events-none animate-fade-in"
               style={{

@@ -26,6 +26,8 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
+const MYRAA_API_PREFIX = import.meta.env.VITE_MYRAA_API_PREFIX || "";
+
 interface LogItem {
   id: string;
   text: string;
@@ -211,7 +213,7 @@ export const BrowserAgent: React.FC<BrowserAgentProps> = ({
           const urlObj = new URL(activeTab.url);
           const q = urlObj.searchParams.get("search_query") || "";
 
-          fetch(`/api/youtube-search?q=${encodeURIComponent(q)}`)
+          fetch(`${MYRAA_API_PREFIX}/api/youtube-search?q=${encodeURIComponent(q)}`)
             .then((res) => {
               if (!res.ok) throw new Error(`HTTP status ${res.status}`);
               return res.json();

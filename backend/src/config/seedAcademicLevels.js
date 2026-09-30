@@ -13,11 +13,13 @@ export async function seedAcademicLevels() {
     const year = await Year.findOneAndUpdate(
       { academicLevel: academicYear.level },
       {
-        $setOnInsert: {
+        $set: {
           name: academicYear.name,
           code: academicYear.code,
           order: academicYear.order,
-          academicLevel: academicYear.level,
+          academicLevel: academicYear.level
+        },
+        $setOnInsert: {
           status: 'active',
           isActive: true
         }
@@ -26,10 +28,11 @@ export async function seedAcademicLevels() {
     );
 
     for (const number of academicYear.semesters) {
+      const ordinal = number === 1 ? '1st' : number === 2 ? '2nd' : number === 3 ? '3rd' : `${number}th`;
       await Semester.findOneAndUpdate(
         { yearId: year._id, number },
         {
-          $set: { name: `Semester ${number}`, code: `${academicYear.code}-SEM-${number}` },
+          $set: { name: `${ordinal} Semester`, code: `${academicYear.code}-SEM-${number}` },
           $setOnInsert: { yearId: year._id, number, status: 'active', isActive: true }
         },
         { new: true, upsert: true, setDefaultsOnInsert: true }
@@ -37,10 +40,4 @@ export async function seedAcademicLevels() {
     }
   }
 
-  for (const number of [1, 2, 3, 4, 5, 6, 7, 8]) {
-    await Semester.updateMany(
-      { number },
-      { $set: { name: `Semester ${number}` } }
-    );
-  }
 }

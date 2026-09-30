@@ -1,0 +1,8 @@
+{
+  "name": "college-practical-portal",
+  "private": true,
+  "scripts": {
+    "dev": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\start-project.ps1",
+    "start": "powershell -NoProfile -ExecutionPolicy Bypass -File .\\scripts\\start-project.ps1"
+  }
+}

@@ -409,7 +409,27 @@ async function callDesktopAgent(
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT || process.env.MYRAA_PORT || 3000);
+  const configuredOrigins = process.env.MYRAA_ALLOWED_ORIGINS || process.env.FRONTEND_URL ||
+    (process.env.NODE_ENV === "production" ? "" : "http://localhost:5173,http://127.0.0.1:5173");
+  const allowedOrigins = new Set(
+    configuredOrigins.split(",").map((origin) => origin.trim()).filter(Boolean),
+  );
+
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && !allowedOrigins.has(origin)) {
+      return res.status(403).json({ error: "This origin is not allowed." });
+    }
+    if (origin) {
+      res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
+    }
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+  });
 
   app.use(express.json());
 
@@ -1012,6 +1032,12 @@ async function startServer() {
   const orchestrator = new MyraaOrchestrator();
 
   server.on("upgrade", (request, socket, head) => {
+    const origin = request.headers.origin;
+    if (origin && !allowedOrigins.has(origin)) {
+      logError(`WEBSOCKET_ORIGIN_REJECTED ${origin}`);
+      socket.destroy();
+      return;
+    }
     const pathname = new URL(
       request.url || "",
       `http://${request.headers.host}`,

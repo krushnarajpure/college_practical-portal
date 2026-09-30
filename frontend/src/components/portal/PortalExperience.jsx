@@ -17,10 +17,12 @@ import subjectService from '../../services/subjectService';
 import teacherService from '../../services/teacherService';
 import studentService from '../../services/studentService';
 import pdfService from '../../services/pdfService';
+import AcademicDocumentsPage from '../../features/academicDocuments/AcademicDocumentsPage';
 import progressService from '../../services/progressService';
 import bookmarkService from '../../services/bookmarkService';
 import { getAcademicYearOptions } from '../../utils/academicYear';
 import TeacherPracticalModal from './TeacherPracticalModal';
+import MyraaIntegrated from '../../features/myraa/MyraaIntegrated';
 
 const roleHome = { admin: '/admin/dashboard', teacher: '/teacher/dashboard', student: '/student/dashboard' };
 const roleNames = { admin: 'Administrator', teacher: 'Teacher', student: 'Student' };
@@ -63,16 +65,62 @@ function PracticalRow({ practical, subject, onOpen, completed = false }) {
   return <div className="practical-row"><span className="row-number">{number(practical.practicalNumber)}</span><div className="row-main"><strong>{practical.title}</strong><span>{subject?.name || 'Course practical'}</span></div><Status>{completed ? 'Completed' : 'Available'}</Status><Button variant="quiet" onClick={() => onOpen(practical)} aria-label={`View ${practical.title}`}>View <ChevronRight size={15} /></Button></div>;
 }
 
+function getInitials(name = '') {
+  return name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'U';
+}
+
+function useProfilePhoto(user) {
+  const [photoUrl, setPhotoUrl] = useState('');
+
+  useEffect(() => {
+    let objectUrl = '';
+
+    const load = async () => {
+      if (!user?.profilePhotoId) {
+        setPhotoUrl('');
+        return;
+      }
+
+      try {
+        const blob = await studentService.getProfilePhoto();
+        objectUrl = URL.createObjectURL(blob);
+        setPhotoUrl(objectUrl);
+      } catch {
+        setPhotoUrl('');
+      }
+    };
+
+    load();
+
+    return () => {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [user?._id, user?.profilePhotoId]);
+
+  return photoUrl;
+}
+
+function ProfileAvatar({ name, photoUrl, size = 'md' }) {
+  const variantClass = size === 'lg' ? 'avatar-large' : size === 'sm' ? 'avatar-small' : '';
+  return (
+    <span className={`avatar ${variantClass}`.trim()}>
+      {photoUrl ? <img src={photoUrl} alt={name || 'Profile'} /> : getInitials(name)}
+    </span>
+  );
+}
+
 function DashboardShell({ role, children, search, setSearch, notificationOpen, setNotificationOpen, mobileOpen, setMobileOpen, onLogout, user, searchSubjects = [], searchPracticals = [] }) {
   const roleNav = {
     student: [
       ['Overview', '/student/dashboard', LayoutDashboard], ['My subjects', '/student/subjects', BookOpen],
       ['Practicals', '/student/practicals', ClipboardList], ['Bookmarks', '/student/bookmarks', Bookmark],
+      ['Academic Documents', '/student/academic-documents', FileText],
       ['Myraa assistant', '/student/myraa', Sparkles], ['Profile', '/student/profile', Users]
     ],
     teacher: [
       ['Overview', '/teacher/dashboard', LayoutDashboard], ['My subjects', '/teacher/subjects', BookOpen],
       ['Practicals', '/teacher/practicals', ClipboardList], ['Add practical', '/teacher/practicals/add', FilePlus2],
+      ['Academic Documents', '/teacher/academic-documents', FileText],
       ['Students', '/teacher/students', Users], ['Profile', '/teacher/profile', Users]
     ],
     admin: [
@@ -87,6 +135,7 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
     : roleNames[role];
   const roleNotifications = notifications.filter((item) => item.role === role);
   const [profileOpen, setProfileOpen] = useState(false);
+  const profilePhotoUrl = useProfilePhoto(user);
 
   return <div className="portal-layout">
     {mobileOpen && <button className="drawer-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
@@ -107,7 +156,7 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
           <label className="global-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search subjects, practicals..." aria-label="Search subjects and practicals" />{search && <button onClick={() => setSearch('')} aria-label="Clear search"><X size={14} /></button>}<kbd>⌘ K</kbd></label>
           {search && <div className="search-popover">{[...searchSubjects.filter((item) => item.name?.toLowerCase().includes(search.toLowerCase())).slice(0, 3).map((item) => ({ label: item.name, to: role === 'student' ? `/student/subjects/${item._id || item.id}` : `/${role}/subjects` })), ...searchPracticals.filter((item) => item.title?.toLowerCase().includes(search.toLowerCase())).slice(0, 3).map((item) => ({ label: item.title, to: role === 'student' ? `/student/practicals/${item._id || item.id}` : `/${role}/practicals/${item._id || item.id}` }))].map((result, index) => <Link key={`${result.label}-${index}`} to={result.to} onClick={() => setSearch('')}><Search size={14} />{result.label}<ArrowRight size={14} /></Link>)}{!searchSubjects.some((item) => item.name?.toLowerCase().includes(search.toLowerCase())) && !searchPracticals.some((item) => item.title?.toLowerCase().includes(search.toLowerCase())) && <span className="search-empty">No matching learning material</span>}</div>}
           <div className="topbar-menu-wrap"><button className={`icon-button notification-trigger ${notificationOpen ? 'is-active' : ''}`} onClick={() => setNotificationOpen(!notificationOpen)} aria-label="Notifications"><Bell size={18} /></button>{notificationOpen && <div className="notification-popover"><div className="popover-heading"><strong>Notifications</strong><button className="text-link" onClick={() => setNotificationOpen(false)}>Close</button></div>{roleNotifications.length ? roleNotifications.map((item) => <div className="notification-item" key={item.id}><span className="notification-dot" /><div><strong>{item.title}</strong><small>{item.time}</small></div></div>) : <p className="popover-empty">No notifications yet.</p>}<Link to={`/${role}/notifications`} className="popover-footer" onClick={() => setNotificationOpen(false)}>View all notifications <ArrowRight size={14} /></Link></div>}</div>
-          <div className="topbar-menu-wrap"><button className="profile-trigger" onClick={() => setProfileOpen(!profileOpen)}><span className="avatar">{user?.name?.split(' ').map((part) => part[0]).slice(0, 2).join('') || 'U'}</span><span className="profile-trigger-copy"><strong>{user?.name || roleNames[role]}</strong><small>{scope}</small></span><ChevronDown size={15} /></button>{profileOpen && <div className="profile-menu"><Link to={`/${role}/profile`} onClick={() => setProfileOpen(false)}>View profile</Link><button onClick={onLogout}>Sign out</button></div>}</div>
+          <div className="topbar-menu-wrap"><button className="profile-trigger" onClick={() => setProfileOpen(!profileOpen)}><ProfileAvatar name={user?.name} photoUrl={profilePhotoUrl} size="sm" /><span className="profile-trigger-copy"><strong>{user?.name || roleNames[role]}</strong><small>{scope}</small></span><ChevronDown size={15} /></button>{profileOpen && <div className="profile-menu"><Link to={`/${role}/profile`} onClick={() => setProfileOpen(false)}>View profile</Link><button onClick={onLogout}>Sign out</button></div>}</div>
         </div>
       </header>
       <main className="workspace-content">{children}</main>
@@ -298,22 +347,238 @@ function StudentBookmarks({ practicalList, bookmarkedIds, subjectList = [] }) {
 }
 
 function MyraaPage() {
-  const myraaUrl = import.meta.env.VITE_MYRAA_URL || 'http://localhost:3000';
-  return <><PageHeading eyebrow="YOUR LEARNING COMPANION" title="Myraa voice assistant" description="Your Myraa assistant, connected from the existing voice assistant project." /><section className="myraa-embed"><iframe title="Myraa voice assistant" src={myraaUrl} allow="microphone; autoplay" /></section></>;
+  return <><PageHeading eyebrow="YOUR LEARNING COMPANION" title="Myraa voice assistant" description="Your existing Myraa assistant, connected to this student workspace." /><MyraaIntegrated /></>;
 }
 
-function ProfilePage({ user, role }) {
-  const [saved, setSaved] = useState(false);
+function ProfilePage({ user, role, notify }) {
+  const { setUser } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
+  const [catalog, setCatalog] = useState({ departments: [], years: [], semesters: [] });
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState('');
+  const [removePhoto, setRemovePhoto] = useState(false);
+  const [fields, setFields] = useState({
+    name: user?.name || '',
+    studentId: user?.studentId || '',
+    departmentId: user?.departmentId?._id || user?.departmentId || '',
+    yearId: user?.yearId?._id || user?.yearId || '',
+    semesterId: user?.semesterId?._id || user?.semesterId || '',
+    academicYear: user?.academicYear || ''
+  });
+  const profilePhotoUrl = useProfilePhoto(user);
+
+  useEffect(() => {
+    if (!open || role !== 'student') return;
+
+    let active = true;
+    const loadCatalog = async () => {
+      try {
+        const [departmentResponse, yearResponse, semesterResponse] = await Promise.all([
+          api.get('/departments', { status: 'active' }),
+          api.get('/years', { status: 'active' }),
+          api.get('/semesters', { status: 'active' })
+        ]);
+
+        if (!active) return;
+        setCatalog({
+          departments: departmentResponse?.data?.departments || [],
+          years: yearResponse?.data?.years || [],
+          semesters: semesterResponse?.data?.semesters || []
+        });
+      } catch {
+        if (active) {
+          setError('Unable to load department, year and semester options.');
+        }
+      }
+    };
+
+    loadCatalog();
+    return () => { active = false; };
+  }, [open, role]);
+
+  useEffect(() => {
+    if (!open) return;
+    setFields({
+      name: user?.name || '',
+      studentId: user?.studentId || '',
+      departmentId: user?.departmentId?._id || user?.departmentId || '',
+      yearId: user?.yearId?._id || user?.yearId || '',
+      semesterId: user?.semesterId?._id || user?.semesterId || '',
+      academicYear: user?.academicYear || ''
+    });
+    setPhotoFile(null);
+    setRemovePhoto(false);
+    setPhotoPreview('');
+    setStatusMessage('');
+    setError('');
+  }, [user, open]);
+
+  useEffect(() => {
+    return () => {
+      if (photoPreview) URL.revokeObjectURL(photoPreview);
+    };
+  }, [photoPreview]);
+
   const assignedSubjects = (user?.assignedSubjects || []).map((subject) => subject?.name || subject).filter(Boolean).join(', ');
   const details = role === 'student' ? [
     ['Full name', user?.name], ['Student ID / Roll number', user?.studentId], ['Email', user?.email],
     ['Department', user?.departmentId?.name || user?.departmentId],
-    ['Year', user?.yearId?.name || user?.yearId], ['Semester', user?.semesterId?.name || user?.semesterId]
+    ['Year', user?.yearId?.name || user?.yearId], ['Semester', user?.semesterId?.name || user?.semesterId], ['Academic year', user?.academicYear]
   ] : role === 'teacher' ? [
     ['Full name', user?.name], ['Employee ID', user?.employeeId], ['Email', user?.email],
     ['Department', user?.departmentId?.name || user?.departmentId], ['Assigned subjects', assignedSubjects]
   ] : [['Full name', user?.name], ['Email', user?.email], ['Role', 'Administrator']];
-  return <><PageHeading eyebrow="ACCOUNT" title="My profile" description="Your account details and academic assignment." actions={<Button onClick={() => setSaved(true)} icon={Check}>{saved ? 'Changes saved' : 'Save changes'}</Button>} /><section className="surface profile-card"><div className="profile-banner"><div className="avatar avatar-large">{user?.name?.split(' ').map((part) => part[0]).slice(0, 2).join('') || 'U'}</div><div><h2>{user?.name}</h2><p>{roleNames[role]} · {user?.email}</p></div><Button variant="secondary" icon={Pencil} onClick={() => setSaved(false)}>Edit profile</Button></div><div className="profile-fields">{details.map(([label, value]) => <div className="profile-field" key={label}><span>{label}</span><strong>{value || 'Not provided'}</strong></div>)}</div></section></>;
+
+  const filteredSemesters = catalog.semesters.filter((semester) => String(semester.yearId?._id || semester.yearId) === String(fields.yearId));
+  const updateField = (key) => (event) => {
+    const value = event.target.value;
+    setFields((current) => ({
+      ...current,
+      [key]: value,
+      ...(key === 'yearId' ? { semesterId: '' } : {})
+    }));
+  };
+
+  const handlePhotoSelection = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const isValidType = ['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || ['.jpg', '.jpeg', '.png', '.webp'].includes(file.name.toLowerCase().slice(file.name.lastIndexOf('.')));
+    if (!isValidType) {
+      setError('Please upload a JPG, JPEG, PNG or WEBP image.');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Profile photo must be 5 MB or smaller.');
+      return;
+    }
+
+    setError('');
+    setRemovePhoto(false);
+    if (photoPreview) URL.revokeObjectURL(photoPreview);
+    const previewUrl = URL.createObjectURL(file);
+    setPhotoPreview(previewUrl);
+    setPhotoFile(file);
+  };
+
+  const saveProfile = async () => {
+    setSaving(true);
+    setError('');
+    setStatusMessage('');
+
+    try {
+      if (!fields.name.trim() || fields.name.trim().length < 2) {
+        throw new Error('Please enter a valid full name.');
+      }
+      if (!fields.studentId.trim()) {
+        throw new Error('Student ID / roll number is required.');
+      }
+      if (!fields.departmentId || !fields.yearId || !fields.semesterId) {
+        throw new Error('Please select a valid active department, year and semester.');
+      }
+
+      const selectedSemester = catalog.semesters.find((semester) => String(semester._id) === String(fields.semesterId));
+      if (!selectedSemester || String(selectedSemester.yearId?._id || selectedSemester.yearId) !== String(fields.yearId)) {
+        throw new Error('Selected semester does not belong to the selected year.');
+      }
+
+      const formData = new FormData();
+      formData.append('name', fields.name.trim());
+      formData.append('studentId', fields.studentId.trim());
+      formData.append('departmentId', fields.departmentId);
+      formData.append('yearId', fields.yearId);
+      formData.append('semesterId', fields.semesterId);
+      formData.append('academicYear', fields.academicYear);
+      if (removePhoto) formData.append('removePhoto', 'true');
+      if (photoFile) formData.append('photo', photoFile);
+
+      const response = await studentService.updateProfile(formData);
+      const nextUser = response?.data?.user || user;
+      setUser(nextUser);
+      setOpen(false);
+      setStatusMessage('Profile updated successfully');
+      if (notify) notify('Profile updated successfully');
+    } catch (saveError) {
+      setError(saveError.message || 'Unable to update profile. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const closeModal = () => {
+    if (saving) return;
+    setOpen(false);
+    setError('');
+    setStatusMessage('');
+    if (photoPreview) {
+      URL.revokeObjectURL(photoPreview);
+      setPhotoPreview('');
+    }
+    setPhotoFile(null);
+    setRemovePhoto(false);
+  };
+
+  return <>
+    <PageHeading eyebrow="ACCOUNT" title="My profile" description="Your account details and academic assignment." actions={role === 'student' && <Button variant="secondary" icon={Pencil} onClick={() => setOpen(true)}>Edit profile</Button>} />
+    <section className="surface profile-card">
+      <div className="profile-banner">
+        <ProfileAvatar name={user?.name} photoUrl={profilePhotoUrl} size="lg" />
+        <div>
+          <h2>{user?.name}</h2>
+          <p>{roleNames[role]} · {user?.email}</p>
+        </div>
+      </div>
+      {error && <p className="form-error">{error}</p>}
+      {statusMessage && !open && <p className="form-success">{statusMessage}</p>}
+      <div className="profile-fields">
+        {details.map(([label, value]) => <div className="profile-field" key={label}><span>{label}</span><strong>{value || 'Not provided'}</strong></div>)}
+      </div>
+    </section>
+    {open && role === 'student' && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) closeModal(); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="student-profile-modal-title" className="w-full max-w-2xl rounded-xl border border-slate-200 bg-white p-5 shadow-xl sm:p-6">
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div>
+            <p className="eyebrow">EDIT PROFILE</p>
+            <h2 id="student-profile-modal-title" className="text-xl font-bold text-slate-800">Update your profile</h2>
+          </div>
+          <button type="button" className="icon-button" onClick={closeModal} aria-label="Close profile editor" disabled={saving}><X size={17} /></button>
+        </div>
+        <div className="grid gap-5 md:grid-cols-[180px_1fr]">
+          <div className="space-y-3">
+            <div className="flex justify-center">
+              <ProfileAvatar name={fields.name || user?.name} photoUrl={removePhoto ? '' : (photoPreview || profilePhotoUrl)} size="lg" />
+            </div>
+            <p className="text-center text-xs text-slate-500">Profile photo is optional.</p>
+            <label className="button button-secondary w-full justify-center cursor-pointer">
+              <input type="file" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" className="hidden" onChange={handlePhotoSelection} />
+              {photoFile || profilePhotoUrl ? 'Change photo' : 'Upload photo'}
+            </label>
+            {(photoFile || profilePhotoUrl) && <button type="button" className="button button-secondary w-full justify-center" onClick={() => { setRemovePhoto(true); setPhotoFile(null); if (photoPreview) { URL.revokeObjectURL(photoPreview); setPhotoPreview(''); } }}>Remove photo</button>}
+          </div>
+          <div className="space-y-4">
+            <label className="form-field"><span>Full name</span><input value={fields.name} onChange={updateField('name')} placeholder="Enter your full name" /></label>
+            <label className="form-field"><span>Student ID / Roll number</span><input value={fields.studentId} onChange={updateField('studentId')} placeholder="Enter student ID / roll number" /></label>
+            <label className="form-field"><span>Email</span><input value={user?.email || ''} readOnly aria-readonly="true" placeholder="Email is managed through your account authentication." /></label>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="form-field"><span>Department</span><select value={fields.departmentId} onChange={updateField('departmentId')}><option value="">Select department</option>{catalog.departments.map((department) => <option key={department._id} value={department._id}>{department.name}</option>)}</select></label>
+              <label className="form-field"><span>Year</span><select value={fields.yearId} onChange={updateField('yearId')}><option value="">Select year</option>{catalog.years.map((year) => <option key={year._id} value={year._id}>{year.name}</option>)}</select></label>
+            </div>
+            <label className="form-field"><span>Semester</span><select value={fields.semesterId} onChange={updateField('semesterId')}><option value="">Select semester</option>{filteredSemesters.map((semester) => <option key={semester._id} value={semester._id}>{semester.name}</option>)}</select></label>
+            <label className="form-field"><span>Academic year</span><input value={fields.academicYear} onChange={updateField('academicYear')} placeholder="e.g. 2026-27" /></label>
+            {error && <p className="text-sm text-red-700" role="alert">{error}</p>}
+            <div className="flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <button type="button" className="button button-secondary" onClick={closeModal} disabled={saving}>Cancel</button>
+              <button type="button" className="button button-primary" onClick={saveProfile} disabled={saving}>{saving ? 'Saving...' : 'Save changes'}</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>}
+  </>;
 }
 
 function TeacherDashboard({ practicalList, user, subjectList = [] }) {
@@ -683,7 +948,8 @@ export default function PortalExperience() {
   } else if (role === 'student') {
     const activeStudentPracticals = studentPracticalList;
     const activeStudentSubjects = studentSubjectList;
-    if (route === '/dashboard') page = <StudentDashboard user={user} practicalList={activeStudentPracticals} bookmarkedIds={bookmarkedIds} subjectList={activeStudentSubjects} completedIds={completedIds} />;
+    if (route.startsWith('/academic-documents')) page = <AcademicDocumentsPage role={role} notify={notify} />;
+    else if (route === '/dashboard') page = <StudentDashboard user={user} practicalList={activeStudentPracticals} bookmarkedIds={bookmarkedIds} subjectList={activeStudentSubjects} completedIds={completedIds} />;
     else if (route === '/subjects') page = <StudentSubjects user={user} practicalList={activeStudentPracticals} subjectList={activeStudentSubjects} completedIds={completedIds} />;
     else if (subjectMatch) page = <StudentSubjectDetail subjectId={subjectMatch[1]} subjectList={activeStudentSubjects} completedIds={completedIds} />;
     else if (route === '/practicals') page = <StudentPracticals practicalList={activeStudentPracticals} subjectList={activeStudentSubjects} completedIds={completedIds} />;
@@ -695,19 +961,20 @@ export default function PortalExperience() {
   } else if (role === 'teacher') {
     const teacherSubjects = teacherSubjectList;
     const teacherPracticals = teacherPracticalList;
-    if (route === '/dashboard') page = <TeacherDashboard practicalList={teacherPracticals} user={user} subjectList={teacherSubjects} />;
+    if (route.startsWith('/academic-documents')) page = <AcademicDocumentsPage role={role} notify={notify} />;
+    else if (route === '/dashboard') page = <TeacherDashboard practicalList={teacherPracticals} user={user} subjectList={teacherSubjects} />;
     else if (route === '/subjects') page = <TeacherSubjects user={user} subjectList={teacherSubjects} />;
     else if (route === '/practicals') page = <TeacherPracticalList practicalList={teacherPracticals} subjectList={teacherSubjects} subjectIds={new Set(teacherSubjects.map((item) => String(item._id || item.id)))} onDelete={deletePractical} onTogglePublish={togglePublished} notify={notify} />;
     else if (route === '/practicals/add') page = <TeacherPracticalModal user={user} notify={notify} onSaved={refreshTeacherData} />;
     else if (route.endsWith('/edit')) { const item = teacherPracticals.find((practical) => String(practical._id || practical.id) === String(practicalMatch?.[1])); page = <TeacherPracticalModal practical={item} user={user} notify={notify} onSaved={refreshTeacherData} />; }
     else if (practicalMatch) { const item = teacherPracticals.map(normalizePracticalFromApi).filter(Boolean).find((practical) => String(practical.id) === String(practicalMatch[1])); page = <><PageHeading eyebrow="PRACTICAL DETAIL" title={item?.title || 'Practical'} description="Review the original file and generated student learning guide." actions={<Link to={`/teacher/practicals/${item?.id}/edit`} className="button button-secondary"><Pencil size={15} />Edit practical</Link>} /><div className="surface practical-preview"><h2>Student learning guide</h2><p><strong>Aim</strong><br />{item?.aim}</p><p><strong>About</strong><br />{item?.about}</p><div className="pdf-actions"><Button variant="secondary" onClick={() => notify('Original PDF preview is available after upload.')}>Open original PDF</Button><Button onClick={() => togglePublished(item)}>{item?.published ? 'Unpublish' : 'Publish'}</Button></div></div></>; }
     else if (route === '/students') page = <TeacherStudents studentList={teacherStudentList} />;
-    else if (route === '/profile') page = <ProfilePage user={user} role={role} />;
+    else if (route === '/profile') page = <ProfilePage user={user} role={role} notify={notify} />;
   } else if (role === 'admin') {
     if (route === '/dashboard') page = <AdminDashboard practicalList={practicalList} teacherList={adminTeacherList} studentList={adminStudentList} catalog={adminCatalog} subjectList={adminSubjectList} />;
     else if (['/departments', '/years', '/semesters', '/subjects', '/teachers', '/students', '/practicals'].includes(route)) page = <AdminManagement page={route.slice(1)} practicalList={practicalList} notify={notify} />;
     else if (route === '/settings') page = <AdminSettings notify={notify} />;
-    else if (route === '/profile') page = <ProfilePage user={user} role={role} />;
+    else if (route === '/profile') page = <ProfilePage user={user} role={role} notify={notify} />;
   }
   if (!page) page = <EmptyState title="Page not found" text="This workspace page is not available." action={<Link to={roleHome[role]} className="text-link">Return to overview</Link>} />;
 
