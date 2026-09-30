@@ -12,6 +12,7 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     resolve: {
+      dedupe: ['react', 'react-dom', 'lucide-react', 'motion'],
       alias: {
         '@myraa': path.resolve(__dirname, '../myraa/Myraa-Voice-Assistant-main/src')
       }
