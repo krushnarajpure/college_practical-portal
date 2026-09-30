@@ -12,9 +12,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     resolve: {
-      dedupe: ['react', 'react-dom', 'lucide-react', 'motion'],
+      dedupe: ['react', 'react-dom'],
       alias: {
-        '@myraa': path.resolve(__dirname, '../myraa/Myraa-Voice-Assistant-main/src')
+        '@myraa': path.resolve(__dirname, '../myraa/Myraa-Voice-Assistant-main/src'),
+        'lucide-react': path.resolve(__dirname, 'node_modules/lucide-react/dist/esm/lucide-react.js'),
+        'motion/react': path.resolve(__dirname, 'node_modules/motion/dist/es/react.mjs')
       }
     },
     define: {
