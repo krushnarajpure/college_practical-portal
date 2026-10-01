@@ -60,7 +60,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-AGENT_TOKEN = os.environ.get("MYRAA_AGENT_TOKEN", "").strip()
+AGENT_TOKEN = (os.environ.get("MYRAA_DEVICE_TOKEN") or os.environ.get("MYRAA_AGENT_TOKEN") or "").strip()
 
 # Same-origin Node bridge is the only caller; allow localhost origins flexibly.
 app.add_middleware(

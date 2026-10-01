@@ -81,6 +81,7 @@ export class MyraaAudioSession {
   private turnCompleteReceived = false;
   private wantsConnection = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempt = 0;
   private lastBargeInAt = 0;
   private streamEpoch = 0;
@@ -173,6 +174,10 @@ export class MyraaAudioSession {
         if (!this.wantsConnection || this.ws !== ws) return;
         await this.startAudio();
         this.reconnectAttempt = 0;
+        if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+        this.heartbeatTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "ping" }));
+        }, 15_000);
       } catch (error: any) {
         this.onError(`Microphone setup failed: ${error?.message || error}`);
         this.handleTransportLoss(ws);
@@ -195,6 +200,7 @@ export class MyraaAudioSession {
           if (data.status === "session_closed") this.handleTransportLoss(ws);
           return;
         }
+        if (data.type === "pong") return;
         if (data.type === "audio" && data.audio) {
           this.playAudioPCMChunk(data.audio, this.streamEpoch);
         }
@@ -422,6 +428,8 @@ export class MyraaAudioSession {
   }
 
   private releaseResources(closeSocket: boolean): void {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
     const ws = this.ws;
     this.ws = null;
     if (ws) {

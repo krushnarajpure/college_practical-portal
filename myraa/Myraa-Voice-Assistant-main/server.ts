@@ -73,7 +73,7 @@ const logError = (m: string) => appendLog("errors.log", m);
 const DESKTOP_AGENT_URL =
   process.env.DESKTOP_AGENT_URL || "http://127.0.0.1:8765";
 const DESKTOP_AGENT_TIMEOUT = 25_000; // ms
-const DESKTOP_AGENT_TOKEN = process.env.MYRAA_AGENT_TOKEN || randomUUID();
+const DESKTOP_AGENT_TOKEN = process.env.MYRAA_DEVICE_TOKEN || process.env.MYRAA_AGENT_TOKEN || randomUUID();
 
 /**
  * The complete set of tool names routed to the Python desktop agent.
@@ -194,6 +194,7 @@ function spawnDesktopAgent(): void {
     MYRAA_AGENT_HOST: "127.0.0.1",
     MYRAA_AGENT_PORT: "8765",
     MYRAA_AGENT_TOKEN: DESKTOP_AGENT_TOKEN,
+    MYRAA_DEVICE_TOKEN: DESKTOP_AGENT_TOKEN,
   };
 
   // In production builds, use the frozen agent executable if available.
@@ -1070,6 +1071,17 @@ async function startServer() {
   // Handle client WebSocket Connection
   wss.on("connection", async (clientWs) => {
     console.log("Client WebSocket connected to /live");
+    // Keep transport health independent from Gemini session creation so the
+    // client can detect a live socket during API-key or cold-start delays.
+    clientWs.on("message", (rawMsg) => {
+      try {
+        if (JSON.parse(rawMsg.toString()).type === "ping") {
+          clientWs.send(JSON.stringify({ type: "pong" }));
+        }
+      } catch {
+        // The session-specific listener below handles malformed application data.
+      }
+    });
 
     // Immediately teardown any previous Gemini session / socket
     if (activeLiveClient) {
