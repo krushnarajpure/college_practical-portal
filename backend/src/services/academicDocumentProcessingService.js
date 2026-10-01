@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import path from 'path';
 import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { createCanvas } from '@napi-rs/canvas';
 import { Document, Packer, Paragraph } from 'docx';
 import ExcelJS from 'exceljs';
 import { GoogleGenAI } from '@google/genai';
@@ -419,4 +420,35 @@ export async function getPdfPageCount(buffer) {
   } catch {
     return null;
   }
+}
+
+export async function renderPdfPages(buffer) {
+  let pdf;
+  try {
+    pdf = await getDocument({ data: new Uint8Array(buffer), useSystemFonts: true }).promise;
+  } catch {
+    throw unsupported('This PDF is invalid or corrupted and cannot be rendered.');
+  }
+
+  const scale = env.pdfPageRenderDpi / 72;
+  const pages = [];
+  try {
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const viewport = page.getViewport({ scale });
+      const canvas = createCanvas(Math.ceil(viewport.width), Math.ceil(viewport.height));
+      const context = canvas.getContext('2d');
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, canvas.width, canvas.height);
+      await page.render({ canvasContext: context, viewport }).promise;
+      const image = canvas.toBuffer('image/png');
+      pages.push({ pageNumber, buffer: image, width: canvas.width, height: canvas.height });
+      page.cleanup();
+    }
+  } catch {
+    await pdf.destroy();
+    throw unsupported('The PDF could not be rendered into page images.');
+  }
+  await pdf.destroy();
+  return pages;
 }

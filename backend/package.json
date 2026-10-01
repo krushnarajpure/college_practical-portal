@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@google/genai": "^2.24.0",
+    "@napi-rs/canvas": "^1.0.9",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "docx": "^9.8.1",

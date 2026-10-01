@@ -1,8 +1,10 @@
 import mongoose from 'mongoose';
+import { randomUUID } from 'node:crypto';
 import AcademicDocument from '../models/AcademicDocument.js';
 import Department from '../models/Department.js';
 import Year from '../models/Year.js';
 import Semester from '../models/Semester.js';
+import Subject from '../models/Subject.js';
 import User from '../models/User.js';
 import { getAcademicDocumentBucket } from '../config/storage.js';
 import {
@@ -11,6 +13,7 @@ import {
   generatePdfEditChanges,
   getEditablePdfContent,
   getPdfPageCount,
+  renderPdfPages,
   readGridFsFile,
   saveDocumentVersion
 } from '../services/academicDocumentProcessingService.js';
@@ -18,7 +21,7 @@ import { successResponse, errorResponse } from '../utils/apiResponse.js';
 
 const fail = (message, statusCode, name = 'AcademicDocumentError') => Object.assign(new Error(message), { statusCode, name });
 const validId = (value) => mongoose.Types.ObjectId.isValid(value);
-const populateFields = ['departmentId', 'yearId', 'semesterId', 'uploadedBy'];
+const populateFields = ['departmentId', 'yearId', 'semesterId', 'subjectId', 'uploadedBy'];
 
 function toDocument(document) {
   const item = document.toObject ? document.toObject() : document;
@@ -30,6 +33,8 @@ function toDocument(document) {
     departmentId: item.departmentId,
     yearId: item.yearId,
     semesterId: item.semesterId,
+    subjectId: item.subjectId,
+    pageImages: item.pageImages,
     originalFile: item.originalFile,
     versions: item.versions,
     uploadedBy: item.uploadedBy,
@@ -76,12 +81,13 @@ async function getAuthorizedDocument(req) {
 }
 
 async function validateTarget(req, body) {
-  const { departmentId, yearId, semesterId } = body;
-  if (![departmentId, yearId, semesterId].every(validId)) throw fail('Select a valid department, year and semester.', 400, 'InvalidAcademicTarget');
-  const [department, year, semester] = await Promise.all([
+  const { departmentId, yearId, semesterId, subjectId } = body;
+  if (![departmentId, yearId, semesterId, subjectId].every(validId)) throw fail('Select a valid department, year, semester and subject.', 400, 'InvalidAcademicTarget');
+  const [department, year, semester, subject] = await Promise.all([
     Department.findOne({ _id: departmentId, status: 'active' }),
     Year.findOne({ _id: yearId, status: 'active' }),
-    Semester.findOne({ _id: semesterId, status: 'active' })
+    Semester.findOne({ _id: semesterId, status: 'active' }),
+    Subject.findOne({ _id: subjectId, status: { $ne: 'inactive' } })
   ]);
   if (!department || !year || !semester || String(semester.yearId) !== String(year._id)) {
     throw fail('The selected academic target is invalid.', 400, 'InvalidAcademicTarget');
@@ -89,6 +95,10 @@ async function validateTarget(req, body) {
   const semestersByLevel = { 1: [1, 2], 2: [3, 4], 3: [5, 6], 4: [7, 8] };
   if (!semestersByLevel[Number(year.academicLevel)]?.includes(Number(semester.number))) {
     throw fail('The selected semester does not belong to the selected year.', 400, 'InvalidAcademicTarget');
+  }
+  if (!subject || String(subject.departmentId) !== String(department._id)
+    || String(subject.yearId) !== String(year._id) || String(subject.semesterId) !== String(semester._id)) {
+    throw fail('Select a subject from the chosen department, year and semester.', 400, 'InvalidAcademicSubject');
   }
   if (req.user.role === 'teacher') {
     const teacher = await User.findById(req.user.id).select('departmentId');
@@ -132,19 +142,39 @@ export const listTeacherDocuments = async (req, res, next) => {
 };
 
 export const createAcademicDocument = async (req, res, next) => {
+  let generatedPageIds = [];
   try {
     if (!req.file?.id) throw fail('Choose a document to upload.', 400, 'MissingAcademicDocumentFile');
     const name = String(req.body.name || '').trim();
     const type = String(req.body.type || '').trim();
-    const allowedTypes = ['Assignment', 'Certificate', 'Index', 'Practical', 'Notes', 'Other Document'];
+    const allowedTypes = ['Assignment', 'Certificate', 'Index', 'Practical', 'Notes', 'Question Paper', 'Study Material', 'Notice', 'Other Document'];
     if (!name) throw fail('Document name is required.', 400, 'InvalidAcademicDocument');
     if (!allowedTypes.includes(type)) throw fail('Select a valid document type.', 400, 'InvalidAcademicDocumentType');
     await validateTarget(req, req.body);
     const uploader = await User.findOne({ _id: req.user.id, role: req.user.role, status: 'active' }).select('name');
     if (!uploader) throw fail('Your account is not authorized to upload documents.', 403, 'Forbidden');
-    const pageCount = req.file.originalFileName.toLowerCase().endsWith('.pdf')
-      ? await getPdfPageCount(await readGridFsFile(req.file.id))
-      : null;
+    const source = req.file.originalFileName.toLowerCase().endsWith('.pdf') ? await readGridFsFile(req.file.id) : null;
+    const renderedPages = source ? await renderPdfPages(source) : [];
+    const pageImages = [];
+    try {
+      for (const page of renderedPages) {
+        const fileName = `${randomUUID()}-page-${page.pageNumber}.png`;
+        const upload = getAcademicDocumentBucket().openUploadStream(fileName, {
+          contentType: 'image/png',
+          metadata: { originalFileName: fileName, documentPage: page.pageNumber }
+        });
+        await new Promise((resolve, reject) => {
+          upload.once('error', reject);
+          upload.once('finish', resolve);
+          upload.end(page.buffer);
+        });
+        generatedPageIds.push(upload.id);
+        pageImages.push({ pageNumber: page.pageNumber, fileId: upload.id, fileName, mimeType: 'image/png', fileSize: page.buffer.length, width: page.width, height: page.height });
+      }
+    } catch (error) {
+      await Promise.all(pageImages.map((page) => getAcademicDocumentBucket().delete(page.fileId).catch(() => undefined)));
+      throw error;
+    }
     const document = await AcademicDocument.create({
       name,
       description: req.body.description || '',
@@ -152,7 +182,9 @@ export const createAcademicDocument = async (req, res, next) => {
       departmentId: req.body.departmentId,
       yearId: req.body.yearId,
       semesterId: req.body.semesterId,
-      originalFile: { fileId: req.file.id, fileName: req.file.originalFileName, mimeType: req.file.mimeType, fileSize: req.file.size, pageCount },
+      subjectId: req.body.subjectId,
+      originalFile: { fileId: req.file.id, fileName: req.file.originalFileName, mimeType: req.file.mimeType, fileSize: req.file.size, pageCount: renderedPages.length || null },
+      pageImages,
       uploadedBy: req.user.id,
       uploadedByName: uploader.name,
       uploadedByRole: req.user.role,
@@ -165,6 +197,7 @@ export const createAcademicDocument = async (req, res, next) => {
     if (req.file?.id) {
       try { await getAcademicDocumentBucket().delete(req.file.id); } catch { error.cleanupFailed = true; }
     }
+    await Promise.all(generatedPageIds.map((fileId) => getAcademicDocumentBucket().delete(fileId).catch(() => undefined)));
     next(error);
   }
 };
@@ -187,19 +220,21 @@ export const updateAcademicDocument = async (req, res, next) => {
     }
     if (req.body.name !== undefined && !document.name) throw fail('Document name is required.', 400, 'InvalidAcademicDocument');
     if (req.body.type !== undefined && !document.type) throw fail('Document type is required.', 400, 'InvalidAcademicDocument');
-    if (req.body.type !== undefined && !['Assignment', 'Certificate', 'Index', 'Practical', 'Notes', 'Other Document'].includes(document.type)) {
+    if (req.body.type !== undefined && !['Assignment', 'Certificate', 'Index', 'Practical', 'Notes', 'Question Paper', 'Study Material', 'Notice', 'Other Document'].includes(document.type)) {
       throw fail('Select a valid document type.', 400, 'InvalidAcademicDocumentType');
     }
-    if (['departmentId', 'yearId', 'semesterId'].some((field) => req.body[field] !== undefined)) {
+    if (['departmentId', 'yearId', 'semesterId', 'subjectId'].some((field) => req.body[field] !== undefined)) {
       const targetInput = {
         departmentId: req.body.departmentId || document.departmentId._id || document.departmentId,
         yearId: req.body.yearId || document.yearId._id || document.yearId,
-        semesterId: req.body.semesterId || document.semesterId._id || document.semesterId
+        semesterId: req.body.semesterId || document.semesterId._id || document.semesterId,
+        subjectId: req.body.subjectId || document.subjectId?._id || document.subjectId
       };
       await validateTarget(req, targetInput);
       document.departmentId = targetInput.departmentId;
       document.yearId = targetInput.yearId;
       document.semesterId = targetInput.semesterId;
+      document.subjectId = targetInput.subjectId;
     }
     await document.save();
     await document.populate(populateFields);
@@ -214,6 +249,12 @@ export const deleteAcademicDocument = async (req, res, next) => {
     const document = await getAuthorizedDocument(req);
     document.isActive = false;
     await document.save();
+    const bucket = getAcademicDocumentBucket();
+    await Promise.all([
+      bucket.delete(document.originalFile.fileId).catch(() => undefined),
+      ...(document.pageImages || []).map((page) => bucket.delete(page.fileId).catch(() => undefined)),
+      ...document.versions.map((version) => bucket.delete(version.fileId).catch(() => undefined))
+    ]);
     return res.status(200).json(successResponse('Academic document deleted.', {}));
   } catch (error) {
     next(error);
@@ -401,4 +442,34 @@ export const reportUnsupportedEdit = async (req, res, next) => {
 export const listAcademicDocuments = (req, res, next) => {
   if (req.user.role === 'student') return listStudentDocuments(req, res, next);
   return listTeacherDocuments(req, res, next);
+};
+
+export const listAcademicDocumentPages = async (req, res, next) => {
+  try {
+    const document = await getAuthorizedDocument(req);
+    return res.status(200).json(successResponse('Academic document pages retrieved.', {
+      pageCount: (document.pageImages || []).length,
+      pages: (document.pageImages || []).map(({ pageNumber, width, height }) => ({ pageNumber, width, height, url: `/api/academic-documents/${document._id}/pages/${pageNumber}` }))
+    }));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const streamAcademicDocumentPage = async (req, res, next) => {
+  try {
+    const document = await getAuthorizedDocument(req);
+    const pageNumber = Number(req.params.pageNumber);
+    const page = document.pageImages.find((item) => item.pageNumber === pageNumber);
+    if (!page) throw fail('Document page not found.', 404, 'DocumentPageNotFound');
+    res.setHeader('Content-Type', page.mimeType);
+    res.setHeader('Content-Length', page.fileSize);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    const stream = getAcademicDocumentBucket().openDownloadStream(page.fileId);
+    stream.on('error', (error) => { if (!res.headersSent) next(error); else res.destroy(error); });
+    stream.pipe(res);
+  } catch (error) {
+    next(error);
+  }
 };

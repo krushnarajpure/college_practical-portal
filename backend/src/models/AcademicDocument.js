@@ -8,6 +8,16 @@ const storedFileSchema = new mongoose.Schema({
   pageCount: { type: Number, default: null }
 }, { _id: false });
 
+const pageImageSchema = new mongoose.Schema({
+  pageNumber: { type: Number, required: true, min: 1 },
+  fileId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  fileName: { type: String, required: true },
+  mimeType: { type: String, default: 'image/png' },
+  fileSize: { type: Number, required: true, min: 0 },
+  width: { type: Number, required: true, min: 1 },
+  height: { type: Number, required: true, min: 1 }
+}, { _id: false });
+
 const editChangeSchema = new mongoose.Schema({
   itemId: { type: String, default: null },
   field: { type: String, required: true, maxlength: 160 },
@@ -36,11 +46,13 @@ const versionSchema = new mongoose.Schema({
 const academicDocumentSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true, maxlength: 160 },
   description: { type: String, default: '', maxlength: 2000 },
-  type: { type: String, required: true, enum: ['Assignment', 'Certificate', 'Index', 'Practical', 'Notes', 'Other Document'] },
+  type: { type: String, required: true, enum: ['Assignment', 'Certificate', 'Index', 'Practical', 'Notes', 'Question Paper', 'Study Material', 'Notice', 'Other Document'] },
   departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', required: true },
   yearId: { type: mongoose.Schema.Types.ObjectId, ref: 'Year', required: true },
   semesterId: { type: mongoose.Schema.Types.ObjectId, ref: 'Semester', required: true },
+  subjectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Subject', required: true },
   originalFile: { type: storedFileSchema, required: true },
+  pageImages: { type: [pageImageSchema], default: [] },
   versions: { type: [versionSchema], default: [] },
   uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   uploadedByName: { type: String, default: 'Teacher', trim: true },

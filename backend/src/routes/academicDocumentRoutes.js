@@ -15,8 +15,10 @@ import {
   listAcademicDocuments,
   listStudentDocuments,
   listTeacherDocuments,
+  listAcademicDocumentPages,
   reportUnsupportedEdit,
   streamAcademicDocument,
+  streamAcademicDocumentPage,
   previewManualEdit,
   updateAcademicDocument
 } from '../controllers/academicDocumentController.js';
@@ -29,6 +31,8 @@ router.get('/student', requireRole('student'), listStudentDocuments);
 router.get('/teacher', requireRole('teacher', 'admin'), listTeacherDocuments);
 router.post('/', requireRole('teacher', 'admin'), academicDocumentUpload.single('file'), createAcademicDocument);
 router.get('/:id/students', requireRole('teacher', 'admin'), getEligibleStudents);
+router.get('/:id/pages', requireRole('student', 'teacher', 'admin'), listAcademicDocumentPages);
+router.get('/:id/pages/:pageNumber', requireRole('student', 'teacher', 'admin'), streamAcademicDocumentPage);
 router.get('/:id/editable-fields', requireRole('student', 'teacher', 'admin'), getEditableFields);
 router.get('/:id/versions/:versionId/file', requireRole('student', 'teacher', 'admin'), streamAcademicDocument);
 router.get('/:id/preview', requireRole('student', 'teacher', 'admin'), streamAcademicDocument);

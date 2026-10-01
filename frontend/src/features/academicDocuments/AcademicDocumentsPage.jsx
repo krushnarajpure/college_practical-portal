@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import api from '../../services/api';
 import academicDocumentService from '../../services/academicDocumentService';
+import AcademicDocumentViewer from './AcademicDocumentViewer';
 
 const categories = [
   ['Assignments', ['assignment']],
@@ -16,7 +17,7 @@ const categories = [
   ['Question Papers', ['question paper', 'question papers']],
   ['Other Documents', ['other']]
 ];
-const documentTypes = ['Assignment', 'Certificate', 'Index', 'Practical', 'Notes', 'Other Document'];
+const documentTypes = ['Assignment', 'Certificate', 'Index', 'Practical', 'Notes', 'Question Paper', 'Study Material', 'Notice', 'Other Document'];
 const quickPrompts = ['Change my name', 'Add roll number', 'Update department', 'Change date', 'Change semester', 'Keep everything else unchanged'];
 const uploadSizeLimit = Number(import.meta.env.VITE_MAX_ACADEMIC_DOCUMENT_SIZE_MB) || 25;
 const allowedUploadExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx'];
@@ -52,8 +53,8 @@ function AcademicDocumentsPage({ role, notify }) {
   const [document, setDocument] = useState(null);
   const [students, setStudents] = useState([]);
   const [studentsDocumentId, setStudentsDocumentId] = useState('');
-  const [fields, setFields] = useState({ name: '', description: '', type: '', departmentId: '', yearId: '', semesterId: '' });
-  const [catalog, setCatalog] = useState({ departments: [], years: [], semesters: [] });
+  const [fields, setFields] = useState({ name: '', description: '', type: '', departmentId: '', yearId: '', semesterId: '', subjectId: '' });
+  const [catalog, setCatalog] = useState({ departments: [], years: [], semesters: [], subjects: [] });
   const [editableFields, setEditableFields] = useState([]);
   const [staticTextItems, setStaticTextItems] = useState([]);
   const [totalTextItems, setTotalTextItems] = useState(0);
@@ -71,6 +72,7 @@ function AcademicDocumentsPage({ role, notify }) {
   const [query, setQuery] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState('');
   const [semesterFilter, setSemesterFilter] = useState('');
   const [yearFilter, setYearFilter] = useState('');
   const [tab, setTab] = useState('All');
@@ -85,6 +87,7 @@ function AcademicDocumentsPage({ role, notify }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [showStudents, setShowStudents] = useState(false);
+  const [documentPages, setDocumentPages] = useState([]);
 
   const reloadDocuments = async () => {
     const response = isTeacher
@@ -100,14 +103,15 @@ function AcademicDocumentsPage({ role, notify }) {
       setError('');
       try {
         if (isUpload || (isTeacher && isDetail)) {
-          const [departments, years, semesters] = await Promise.all([
-            api.get('/departments'), api.get('/years'), api.get('/semesters')
+          const [departments, years, semesters, subjects] = await Promise.all([
+            api.get('/departments'), api.get('/years'), api.get('/semesters'), api.get('/subjects')
           ]);
           if (!active) return;
           setCatalog({
             departments: departments?.data?.departments || [],
             years: years?.data?.years || [],
-            semesters: semesters?.data?.semesters || []
+            semesters: semesters?.data?.semesters || [],
+            subjects: subjects?.data?.subjects || []
           });
         }
         if (isDetail) {
@@ -117,9 +121,20 @@ function AcademicDocumentsPage({ role, notify }) {
           setDocument(item);
           setMetadata({ name: item?.name || '', description: item?.description || '', type: item?.type || '', departmentId: refId(item?.departmentId), yearId: refId(item?.yearId), semesterId: refId(item?.semesterId) });
           if (isTeacherEdit) setMetadataEditing(true);
-          const fileBlob = await academicDocumentService.getFile(documentId);
-          if (!active) return;
-          setPreviewUrl(URL.createObjectURL(fileBlob));
+          if (String(item?.fileType || '').includes('pdf')) {
+            const pageResponse = await academicDocumentService.getPages(documentId);
+            if (!active) return;
+            setDocumentPages(pageResponse?.data?.pages || []);
+            if (!pageResponse?.data?.pages?.length) {
+              const fileBlob = await academicDocumentService.getFile(documentId);
+              if (!active) return;
+              setPreviewUrl(URL.createObjectURL(fileBlob));
+            }
+          } else {
+            const fileBlob = await academicDocumentService.getFile(documentId);
+            if (!active) return;
+            setPreviewUrl(URL.createObjectURL(fileBlob));
+          }
         } else if (!isUpload) {
           await reloadDocuments();
         }
@@ -163,27 +178,32 @@ function AcademicDocumentsPage({ role, notify }) {
   const selectedYear = yearOptions.find((year) => String(year.record?._id) === String(fields.yearId));
   const semesters = catalog.semesters.filter((semester) => String(refId(semester.yearId)) === String(fields.yearId)
     && selectedYear?.semesters.includes(Number(semester.number)));
+  const subjects = catalog.subjects.filter((subject) => String(refId(subject.departmentId)) === String(fields.departmentId)
+    && String(refId(subject.yearId)) === String(fields.yearId)
+    && String(refId(subject.semesterId)) === String(fields.semesterId));
   const metadataSemesters = catalog.semesters.filter((semester) => String(refId(semester.yearId)) === String(metadata.yearId)
     && yearOptions.find((year) => String(year.record?._id) === String(metadata.yearId))?.semesters.includes(Number(semester.number)));
   const filteredDocuments = useMemo(() => documents.filter((item) => {
     const categoryTypes = categories.find(([name]) => name === category)?.[1];
-    const text = [item.name, item.type, ref(item.departmentId), item.uploadedBy?.name].join(' ').toLowerCase();
+    const text = [item.name, item.type, ref(item.subjectId), ref(item.departmentId), item.uploadedBy?.name].join(' ').toLowerCase();
     const isRecent = Date.now() - new Date(item.createdAt).getTime() <= 30 * 24 * 60 * 60 * 1000;
     const isCompleted = (item.versions || []).length > 0;
     return (!query || text.includes(query.toLowerCase()))
       && (!categoryTypes || categoryTypes.some((type) => String(item.type).toLowerCase().includes(type)))
       && (!typeFilter || item.type === typeFilter)
+      && (!subjectFilter || refId(item.subjectId) === subjectFilter)
       && (!semesterFilter || refId(item.semesterId) === semesterFilter)
       && (!departmentFilter || refId(item.departmentId) === departmentFilter)
       && (!yearFilter || refId(item.yearId) === yearFilter)
       && (tab !== 'Recent' || isRecent)
       && (tab !== 'Completed' || isCompleted)
       && (tab !== 'Available' || !isCompleted);
-  }), [documents, query, category, departmentFilter, typeFilter, semesterFilter, yearFilter, tab]);
+  }), [documents, query, category, departmentFilter, typeFilter, subjectFilter, semesterFilter, yearFilter, tab]);
 
   const categoryCounts = categories.map(([name, types]) => [name, documents.filter((item) => types.some((type) => String(item.type).toLowerCase().includes(type))).length]);
   const departmentOptions = documents.map((item) => item.departmentId).filter((item, index, values) => item?._id && values.findIndex((value) => String(value?._id) === String(item._id)) === index);
   const semesterOptions = documents.map((item) => item.semesterId).filter((item, index, values) => item?._id && values.findIndex((value) => String(value?._id) === String(item._id)) === index);
+  const subjectOptions = documents.map((item) => item.subjectId).filter((item, index, values) => item?._id && values.findIndex((value) => String(value?._id) === String(item._id)) === index);
 
   const updateUploadTarget = (field, value) => {
     setSuccess('');
@@ -191,6 +211,7 @@ function AcademicDocumentsPage({ role, notify }) {
       const next = { ...current, [field]: value };
       const nextYear = yearOptions.find((year) => String(year.record?._id) === String(next.yearId));
       if (field === 'yearId' && !nextYear?.semesters.some((number) => catalog.semesters.some((semester) => String(semester._id) === String(current.semesterId) && Number(semester.number) === number && String(refId(semester.yearId)) === String(value)))) next.semesterId = '';
+      if (field === 'departmentId' || field === 'yearId' || field === 'semesterId') next.subjectId = '';
       return next;
     });
   };
@@ -230,6 +251,7 @@ function AcademicDocumentsPage({ role, notify }) {
       if (!fields.departmentId) throw new Error('Select a department.');
       if (!fields.yearId) throw new Error('Select a year.');
       if (!fields.semesterId) throw new Error('Select a semester.');
+      if (!fields.subjectId) throw new Error('Select a subject.');
       if (!file) throw new Error('Choose a document to upload.');
       const payload = new FormData();
       Object.entries(fields).forEach(([key, value]) => payload.append(key, value));
@@ -424,6 +446,7 @@ function AcademicDocumentsPage({ role, notify }) {
       <label className="form-field"><span>Department</span><select required value={fields.departmentId} onChange={(event) => updateUploadTarget('departmentId', event.target.value)}><option value="">Select department</option>{catalog.departments.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select></label>
       <label className="form-field"><span>Year</span><select required value={fields.yearId} onChange={(event) => updateUploadTarget('yearId', event.target.value)}><option value="">Select year</option>{yearOptions.map((item) => <option key={item.level} value={item.record?._id || ''} disabled={!item.record}>{item.name}</option>)}</select></label>
       <label className="form-field"><span>Semester</span><select required value={fields.semesterId} disabled={!fields.yearId} onChange={(event) => updateUploadTarget('semesterId', event.target.value)}><option value="">Select semester</option>{semesters.map((item) => <option key={item._id} value={item._id}>{semesterLabel(item)}</option>)}</select></label>
+      <label className="form-field"><span>Subject</span><select required value={fields.subjectId} disabled={!fields.departmentId || !fields.yearId || !fields.semesterId} onChange={(event) => setFields((current) => ({ ...current, subjectId: event.target.value }))}><option value="">Select subject</option>{subjects.map((item) => <option key={item._id} value={item._id}>{item.name}{item.subjectCode ? ` (${item.subjectCode})` : ''}</option>)}</select></label>
       <label className="form-field academic-doc-wide"><span>Description</span><textarea rows="3" maxLength="2000" value={fields.description} onChange={(event) => setFields((current) => ({ ...current, description: event.target.value }))} placeholder="Optional details for students" /></label>
       <div className={`academic-doc-dropzone academic-doc-wide ${dragActive ? 'is-dragging' : ''}`} onDragEnter={(event) => { event.preventDefault(); setDragActive(true); }} onDragOver={(event) => event.preventDefault()} onDragLeave={() => setDragActive(false)} onDrop={(event) => { event.preventDefault(); setDragActive(false); chooseFile(event.dataTransfer.files?.[0]); }}>
         <Upload size={22} />
@@ -450,14 +473,15 @@ function AcademicDocumentsPage({ role, notify }) {
       <div className="table-toolbar academic-doc-toolbar">
         <label className="field-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search documents, department, teacher" /></label>
         <label className="academic-doc-filter"><Filter size={15} /><select aria-label="Filter by document type" value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="">All types</option>{documentTypes.map((type) => <option key={type}>{type}</option>)}</select></label>
+        <label className="academic-doc-filter"><select aria-label="Filter by subject" value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)}><option value="">All subjects</option>{subjectOptions.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select></label>
         {isTeacher && <label className="academic-doc-filter"><select aria-label="Filter by department" value={departmentFilter} onChange={(event) => setDepartmentFilter(event.target.value)}><option value="">All departments</option>{departmentOptions.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select></label>}
         <label className="academic-doc-filter"><select aria-label="Filter by year" value={yearFilter} onChange={(event) => setYearFilter(event.target.value)}><option value="">All years</option>{yearOptions.filter((year) => year.record && documents.some((item) => refId(item.yearId) === String(year.record._id))).map((item) => <option key={item.level} value={item.record._id}>{item.name}</option>)}</select></label>
         <label className="academic-doc-filter"><select aria-label="Filter by semester" value={semesterFilter} onChange={(event) => setSemesterFilter(event.target.value)}><option value="">All semesters</option>{semesterOptions.map((item) => <option key={item._id} value={item._id}>{semesterLabel(item)}</option>)}</select></label>
       </div>
       {!isTeacher && <div className="segmented-control academic-doc-tabs">{['All', 'Recent', 'Completed', 'Available'].map((item) => <button className={tab === item ? 'selected' : ''} key={item} onClick={() => setTab(item)}>{item}</button>)}</div>}
       {documents.length === 0 ? <section className="surface academic-doc-empty"><FileText size={26} /><h2>No academic documents yet</h2><p>{isTeacher ? 'Upload a document for students in one of your assigned academic groups.' : "Your teachers haven't uploaded any documents for your academic profile."}</p></section>
-        : filteredDocuments.length === 0 ? <section className="surface academic-doc-empty"><Search size={24} /><h2>No matching documents</h2><p>Try clearing a category or filter.</p><button className="button button-secondary" onClick={() => { setQuery(''); setCategory(''); setDepartmentFilter(''); setTypeFilter(''); setSemesterFilter(''); setYearFilter(''); setTab('All'); }}>Clear filters</button></section>
-          : <div className="surface data-table-wrap academic-doc-table-wrap"><table className="data-table academic-doc-table"><thead><tr><th>Document Name</th><th>Type</th>{isTeacher && <><th>Department</th><th>Year</th></>}<th>Semester</th><th>Uploaded By</th><th>Upload Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>{filteredDocuments.map((item) => <tr key={item._id}><td><span className="table-title"><span className="academic-doc-file-icon"><FileText size={16} /></span><span><strong>{item.name}</strong><small>{item.fileName}</small></span></span></td><td>{item.type}</td>{isTeacher && <><td>{ref(item.departmentId) || '—'}</td><td>{yearLevels.find((year) => year.level === Number(item.yearId?.academicLevel))?.name || ref(item.yearId) || '—'}</td></>}<td>{semesterLabel(item.semesterId) || '—'}</td><td>{item.uploadedBy?.name || item.uploadedByName || 'Teacher'}</td><td>{formatDate(item.uploadedAt || item.createdAt)}</td><td><span className="academic-doc-status">{isTeacher ? item.status === 'draft' ? 'Draft' : 'Published' : 'Available'}</span></td><td><div className="table-actions"><Link className="icon-button" title="View document" aria-label="View document" to={`${base}/${item._id}`}><Eye size={15} /></Link>{isTeacher ? <><Link className="icon-button" title="Edit metadata" aria-label="Edit metadata" to={`${base}/${item._id}/edit`}><Pencil size={15} /></Link><button className="icon-button" title="View eligible students" aria-label="View eligible students" onClick={() => { setDocument(item); setStudentsDocumentId(item._id); loadEligibleStudents(item._id); }}><Users size={15} /></button><button className="icon-button danger-action" title="Delete document" aria-label="Delete document" onClick={() => removeDocument(item._id)}><Trash2 size={15} /></button></> : <button className="icon-button" title="Download document" aria-label="Download document" onClick={() => downloadFile('', item._id, item)}><Download size={15} /></button>}</div></td></tr>)}</tbody></table></div>}
+        : filteredDocuments.length === 0 ? <section className="surface academic-doc-empty"><Search size={24} /><h2>No matching documents</h2><p>Try clearing a category or filter.</p><button className="button button-secondary" onClick={() => { setQuery(''); setCategory(''); setDepartmentFilter(''); setTypeFilter(''); setSubjectFilter(''); setSemesterFilter(''); setYearFilter(''); setTab('All'); }}>Clear filters</button></section>
+          : <div className="surface data-table-wrap academic-doc-table-wrap"><table className="data-table academic-doc-table"><thead><tr><th>Document Name</th><th>Type</th>{isTeacher && <><th>Department</th><th>Year</th></>}<th>Semester</th><th>Subject</th><th>Uploaded By</th><th>Upload Date</th><th>Status</th><th>Actions</th></tr></thead><tbody>{filteredDocuments.map((item) => <tr key={item._id}><td><span className="table-title"><span className="academic-doc-file-icon"><FileText size={16} /></span><span><strong>{item.name}</strong><small>{item.fileName}</small></span></span></td><td>{item.type}</td>{isTeacher && <><td>{ref(item.departmentId) || '—'}</td><td>{yearLevels.find((year) => year.level === Number(item.yearId?.academicLevel))?.name || ref(item.yearId) || '—'}</td></>}<td>{semesterLabel(item.semesterId) || '—'}</td><td>{ref(item.subjectId) || '—'}</td><td>{item.uploadedBy?.name || item.uploadedByName || 'Teacher'}</td><td>{formatDate(item.uploadedAt || item.createdAt)}</td><td><span className="academic-doc-status">{isTeacher ? item.status === 'draft' ? 'Draft' : 'Published' : 'Available'}</span></td><td><div className="table-actions"><Link className="icon-button" title="View document" aria-label="View document" to={`${base}/${item._id}`}><Eye size={15} /></Link>{isTeacher ? <><Link className="icon-button" title="Edit metadata" aria-label="Edit metadata" to={`${base}/${item._id}/edit`}><Pencil size={15} /></Link><button className="icon-button" title="View eligible students" aria-label="View eligible students" onClick={() => { setDocument(item); setStudentsDocumentId(item._id); loadEligibleStudents(item._id); }}><Users size={15} /></button><button className="icon-button danger-action" title="Delete document" aria-label="Delete document" onClick={() => removeDocument(item._id)}><Trash2 size={15} /></button></> : <button className="icon-button" title="Download document" aria-label="Download document" onClick={() => downloadFile('', item._id, item)}><Download size={15} /></button>}</div></td></tr>)}</tbody></table></div>}
       {isTeacher && showStudents && <div className="academic-doc-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowStudents(false); }}><section className="surface academic-doc-dialog"><button className="icon-button academic-doc-close" onClick={() => setShowStudents(false)} aria-label="Close eligible students"><X size={17} /></button><p className="eyebrow">DOCUMENT ACCESS</p><h2>Eligible students</h2><p>{document?.name}</p>{students.length ? <div className="academic-doc-student-list">{students.map((student) => <div key={student._id}><strong>{student.name}</strong><span>{student.studentId || student.email}</span></div>)}</div> : <p>No active students match this target.</p>}</section></div>}
     </>;
   }
@@ -490,7 +514,7 @@ function AcademicDocumentsPage({ role, notify }) {
     {pageTitle('ACADEMIC DOCUMENT', document?.name || 'Document', document?.type || 'Document', <Link to={base} className="button button-secondary"><ArrowLeft size={15} />All documents</Link>)}
     {error && <p className="form-error" role="alert">{error}</p>}{success && <p className="form-success" role="status">{success}</p>}
     {isTeacher && <section className="surface academic-doc-manage">{metadataEditing ? <><div className="academic-doc-manage-fields"><label className="form-field"><span>Document name</span><input value={metadata.name} onChange={(event) => setMetadata({ ...metadata, name: event.target.value })} /></label><label className="form-field"><span>Document type</span><select value={metadata.type} onChange={(event) => setMetadata({ ...metadata, type: event.target.value })}>{documentTypes.map((type) => <option key={type} value={type}>{type === 'Other Document' ? 'Other' : type}</option>)}</select></label><label className="form-field"><span>Department</span><select required value={metadata.departmentId} onChange={(event) => updateMetadataTarget('departmentId', event.target.value)}><option value="">Select department</option>{catalog.departments.map((item) => <option key={item._id} value={item._id}>{item.name}</option>)}</select></label><label className="form-field"><span>Year</span><select required value={metadata.yearId} onChange={(event) => updateMetadataTarget('yearId', event.target.value)}><option value="">Select year</option>{yearOptions.map((item) => <option key={item.level} value={item.record?._id || ''} disabled={!item.record}>{item.name}</option>)}</select></label><label className="form-field"><span>Semester</span><select required value={metadata.semesterId} disabled={!metadata.yearId} onChange={(event) => updateMetadataTarget('semesterId', event.target.value)}><option value="">Select semester</option>{metadataSemesters.map((item) => <option key={item._id} value={item._id}>{semesterLabel(item)}</option>)}</select></label><label className="form-field"><span>Description</span><input value={metadata.description} onChange={(event) => setMetadata({ ...metadata, description: event.target.value })} /></label></div><div className="academic-doc-submit"><button className="button button-secondary" onClick={() => setMetadataEditing(false)}>Cancel</button><button className="button button-primary" disabled={busy || !metadata.name.trim() || !metadata.departmentId || !metadata.yearId || !metadata.semesterId} onClick={saveMetadata}>{busy ? 'Saving...' : 'Save details'}</button></div></> : <button className="button button-secondary" onClick={() => setMetadataEditing(true)}><FileText size={15} />Edit document details</button>}</section>}
-    <div className="academic-doc-detail-layout"><section className="surface academic-doc-preview"><div className="academic-doc-preview-heading"><div><span className="eyebrow">DOCUMENT PREVIEW</span><strong>{document?.fileName || document?.originalFile?.fileName}</strong></div><button className="button button-secondary" onClick={() => downloadFile()}><Download size={15} />Download</button></div>{previewUrl && isPdf(document) ? <iframe title={`${document?.name} PDF preview`} src={previewUrl} /> : previewUrl && isImage(document) ? <img src={previewUrl} alt={document?.name || 'Academic document'} /> : <div className="academic-doc-no-preview"><FileText size={30} /><strong>Preview unavailable for this format</strong><span>Download the original file to open it.</span></div>}</section>
+    <div className="academic-doc-detail-layout"><section className="surface academic-doc-preview"><div className="academic-doc-preview-heading"><div><span className="eyebrow">DOCUMENT PREVIEW</span><strong>{document?.fileName || document?.originalFile?.fileName}</strong></div><button className="button button-secondary" onClick={() => downloadFile()}><Download size={15} />Download</button></div>{isPdf(document) && documentPages.length ? <AcademicDocumentViewer documentId={documentId} pages={documentPages} onDownload={() => downloadFile()} /> : previewUrl && isImage(document) ? <img src={previewUrl} alt={document?.name || 'Academic document'} /> : <div className="academic-doc-no-preview"><FileText size={30} /><strong>Preview unavailable for this format</strong><span>Download the original file to open it.</span></div>}</section>
       <aside className="surface academic-doc-metadata"><h2>Document details</h2><dl><div><dt>Type</dt><dd>{document?.type}</dd></div><div><dt>Department</dt><dd>{departmentName || '—'}</dd></div><div><dt>Year / semester</dt><dd>{[yearName, semesterName].filter(Boolean).join(' · ') || '—'}</dd></div><div><dt>Uploaded by</dt><dd>{document?.uploadedBy?.name || 'Teacher'}</dd></div><div><dt>Upload date</dt><dd>{formatDate(document?.uploadedAt || document?.createdAt)}</dd></div><div><dt>File size</dt><dd>{formatSize(document?.fileSize || document?.originalFile?.fileSize)}</dd></div><div><dt>Pages</dt><dd>{document?.pageCount || document?.originalFile?.pageCount || 'Not available'}</dd></div></dl><div className="academic-doc-action-list"><button className="button button-primary" onClick={() => downloadFile()}><Download size={15} />Download original</button>{!isTeacher && isPdf(document) && <><Link className="button button-secondary" to={`${base}/${documentId}/edit`}><FileText size={15} />Manual edit</Link><Link className="button button-secondary" to={`${base}/${documentId}/ai-edit`}><Sparkles size={15} />AI edit with Gemini</Link><button className="button button-secondary" disabled={busy} onClick={() => convert('word')}><BookOpen size={15} />{busy ? 'Converting...' : 'Convert to Word'}</button><button className="button button-secondary" disabled={busy} onClick={() => convert('excel')}><FileText size={15} />{busy ? 'Converting...' : 'Convert to Excel'}</button></>}{!isTeacher && <button className="button button-secondary" onClick={async () => { try { if (navigator.share) await navigator.share({ title: document?.name, url: window.location.href }); else { await navigator.clipboard.writeText(window.location.href); setSuccess('Link copied.'); } } catch { setError('Unable to share this document.'); } }}><Link2 size={15} />Share document</button>}</div></aside></div>
     {fileVersions.length > 0 && <section className="surface academic-doc-versions"><h2>Edited and converted versions</h2>{fileVersions.map((version) => <div key={version._id}><span><strong>{version.fileName}</strong><small>{version.editType} · {formatDate(version.createdAt)}</small>{version.changes?.length > 0 && <small className="academic-doc-version-changes">{version.changes.map((change) => `${change.field}: ${change.oldText || 'Empty'} -> ${change.newText}`).join(' · ')}</small>}</span><div className="table-actions">{version.mimeType === 'application/pdf' && <button className="button button-secondary" onClick={() => previewVersion(version._id)}><Eye size={14} />View</button>}<button className="button button-secondary" onClick={() => downloadFile(version._id)}><Download size={14} />Download</button></div></div>)}</section>}
   </>;

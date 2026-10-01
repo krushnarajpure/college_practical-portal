@@ -40,6 +40,7 @@ Academic Documents is integrated into the existing authenticated student and tea
 - `PUT /api/academic-documents/:id` updates teacher-owned metadata and targeting.
 - `DELETE /api/academic-documents/:id` deactivates a teacher-owned document without deleting its original bytes.
 - `GET /api/academic-documents/:id/preview` streams an authorized original inline; `/download` streams it as an attachment.
+- `GET /api/academic-documents/:id/pages` returns page metadata; `/pages/:pageNumber` streams the generated high-resolution page PNG.
 - `GET /api/academic-documents/:id/students` lists eligible students for the document owner/admin.
 - `GET /api/academic-documents/:id/editable-fields` lists supported PDF form fields for an authorized student.
 - `POST /api/academic-documents/:id/manual-edit` accepts `{ "values": { "Field name": "Value" } }` and adds a new PDF version.
@@ -51,7 +52,7 @@ All routes require the existing bearer-token authentication. Upload, update, del
 
 ### Configuration and local test
 
-Backend environment variables: `MONGODB_URI`, `JWT_SECRET`, `GEMINI_API_KEY` (or existing `AI_API_KEY`), `MAX_ACADEMIC_DOCUMENT_SIZE_MB` (default `25`), and `FRONTEND_URL` (the frontend origin, without `/api`). Set frontend `VITE_API_URL` to the API base including `/api`; locally use `http://localhost:5000/api`.
+Backend environment variables: `MONGODB_URI`, `JWT_SECRET`, `GEMINI_API_KEY` (or existing `AI_API_KEY`), `MAX_ACADEMIC_DOCUMENT_SIZE_MB` (default `25`), `PDF_PAGE_RENDER_DPI` (150-600, default `300`), and `FRONTEND_URL` (the frontend origin, without `/api`). Set frontend `VITE_API_URL` to the API base including `/api`; locally use `http://localhost:5000/api`.
 
 The backend adds `pdf-lib` and `pdfjs-dist` for PDF form editing/text extraction, `docx` for Word output, and `exceljs` for Excel output. These dependencies are declared in `backend/package.json` and install with the normal backend `npm install`.
 
@@ -67,4 +68,4 @@ Deploy the backend as a separate Render Web Service with the existing MongoDB co
 
 Myraa is also a separate persistent Render Web Service because Vercel's static frontend deployment cannot run Myraa's Express server or WebSocket endpoint. Use `myraa/Myraa-Voice-Assistant-main` as the Render root directory, `npm ci && npm run build` as the build command, `npm start` as the start command, and `/api/config` as the health check. Set `MYRAA_ALLOWED_ORIGINS` to the Vercel origin and set Vercel `VITE_MYRAA_API_PREFIX` to the Myraa Render origin without a trailing slash. Redeploy Vercel after adding that variable. The frontend uses `/live` on the same Myraa origin for WebSocket connections.
 
-Manual and AI editing support fillable AcroForm PDF fields only. Arbitrary printed text, seals, signatures, logos, and page layout are not rewritten; unsupported files return a clear error and the original remains unchanged. Scanned PDFs require OCR, which is not configured. Word conversion reconstructs extractable PDF text as paragraphs; Excel conversion creates rows from extracted text and splits likely columns where possible. These conversions are real files, but they do not promise pixel-perfect layout or table recognition. DOC, DOCX, XLS, XLSX, PPT, PPTX, and image uploads can be viewed/downloaded as originals; preview and PDF edit/conversion actions are available only where the format supports them.
+Every uploaded PDF is retained in GridFS and rendered into a PNG for every page at the configured DPI (300 by default). Page references are stored in `AcademicDocument.pageImages`; the student viewer loads the first page immediately and lazy-loads other pages through the authorized page endpoint. Manual and AI editing support fillable AcroForm PDF fields and detected static text replacements; arbitrary seals, signatures, logos, and page layout are not rewritten. Scanned PDFs require OCR for text editing, but their rendered page images can still be viewed. Word conversion reconstructs extractable PDF text as paragraphs; Excel conversion creates rows from extracted text and splits likely columns where possible. These conversions are real files, but they do not promise pixel-perfect layout or table recognition. DOC, DOCX, XLS, XLSX, PPT, PPTX, and image uploads can be viewed/downloaded as originals; page-image preview and PDF edit/conversion actions are available only where the format supports them.
