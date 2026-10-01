@@ -29,8 +29,11 @@ only if the service uses a different WebSocket host/path. The Vite development
 proxy continues to use local port 3001.
 
 Vercel does not start this Node/WebSocket service. If `VITE_MYRAA_API_PREFIX` is
-missing or the Render service is stopped, the portal will correctly show Myraa
-as offline; deploy and wake the Render service before testing `/student/myraa`.
+missing or Render returns `404` with `x-render-routing: no-server`, the Render
+Web Service has not been created, uses the wrong root directory, or is not
+running. Redeploy the repository blueprint and verify
+`https://<myraa-service>.onrender.com/api/config` returns JSON before testing
+`/student/myraa`.
 
 Use the Vercel production origin in `MYRAA_ALLOWED_ORIGINS`. Add preview origins
 only when preview deployments need to connect. Render's assigned `PORT` is used

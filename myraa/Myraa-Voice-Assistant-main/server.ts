@@ -413,16 +413,17 @@ async function startServer() {
   const configuredOrigins = process.env.MYRAA_ALLOWED_ORIGINS || process.env.FRONTEND_URL ||
     (process.env.NODE_ENV === "production" ? "" : "http://localhost:5173,http://127.0.0.1:5173");
   const allowedOrigins = new Set(
-    configuredOrigins.split(",").map((origin) => origin.trim()).filter(Boolean),
+    configuredOrigins.split(",").map((origin) => origin.trim().replace(/\/$/, "")).filter(Boolean),
   );
 
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin && !allowedOrigins.has(origin)) {
+    const normalizedOrigin = origin?.replace(/\/$/, "");
+    if (normalizedOrigin && !allowedOrigins.has(normalizedOrigin)) {
       return res.status(403).json({ error: "This origin is not allowed." });
     }
-    if (origin) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
+    if (normalizedOrigin) {
+      res.setHeader("Access-Control-Allow-Origin", normalizedOrigin);
       res.setHeader("Vary", "Origin");
     }
     res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS");
