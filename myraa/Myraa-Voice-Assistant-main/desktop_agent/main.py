@@ -19,7 +19,7 @@ import traceback
 from contextlib import asynccontextmanager
 from typing import Any, Dict
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -60,6 +60,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+AGENT_TOKEN = os.environ.get("MYRAA_AGENT_TOKEN", "").strip()
+
 # Same-origin Node bridge is the only caller; allow localhost origins flexibly.
 app.add_middleware(
     CORSMiddleware,
@@ -99,7 +101,9 @@ def list_tools() -> Dict[str, Any]:
 
 
 @app.post("/execute", response_model=ExecuteResponse)
-def execute(req: ExecuteRequest) -> ExecuteResponse:
+def execute(req: ExecuteRequest, agent_token: str | None = Header(default=None, alias="X-MYRAA-AGENT-TOKEN")) -> ExecuteResponse:
+    if not AGENT_TOKEN or agent_token != AGENT_TOKEN:
+        raise HTTPException(status_code=401, detail="Desktop agent authentication failed.")
     tool = req.tool
     args = req.args or {}
     log.info("EXEC tool=%s args=%s", tool, _short_args(args))

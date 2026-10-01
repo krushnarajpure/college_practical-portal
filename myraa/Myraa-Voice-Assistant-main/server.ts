@@ -2,6 +2,7 @@ import express from "express";
 import http from "http";
 import path from "path";
 import { spawn } from "child_process";
+import { randomUUID } from "node:crypto";
 import { WebSocketServer } from "ws";
 import {
   GoogleGenAI,
@@ -72,6 +73,7 @@ const logError = (m: string) => appendLog("errors.log", m);
 const DESKTOP_AGENT_URL =
   process.env.DESKTOP_AGENT_URL || "http://127.0.0.1:8765";
 const DESKTOP_AGENT_TIMEOUT = 25_000; // ms
+const DESKTOP_AGENT_TOKEN = process.env.MYRAA_AGENT_TOKEN || randomUUID();
 
 /**
  * The complete set of tool names routed to the Python desktop agent.
@@ -191,6 +193,7 @@ function spawnDesktopAgent(): void {
     ...process.env,
     MYRAA_AGENT_HOST: "127.0.0.1",
     MYRAA_AGENT_PORT: "8765",
+    MYRAA_AGENT_TOKEN: DESKTOP_AGENT_TOKEN,
   };
 
   // In production builds, use the frozen agent executable if available.
@@ -356,7 +359,10 @@ async function callDesktopAgent(
 
       const res = await fetch(`${DESKTOP_AGENT_URL}/execute`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-MYRAA-AGENT-TOKEN": DESKTOP_AGENT_TOKEN,
+        },
         body: JSON.stringify({ tool, args }),
         signal: controller.signal,
       });

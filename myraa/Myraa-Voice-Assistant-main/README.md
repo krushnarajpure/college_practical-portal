@@ -215,6 +215,7 @@ Alternatively, you can paste the key directly in the UI onboarding screen. The k
 - **Constrained Filesystem Scope**: File tools are restricted to standard user directories (`Desktop`, `Documents`, `Downloads`, `Pictures`). Critical OS folders are blocked.
 - **Protected Processes**: Critical Windows system processes (`csrss.exe`, `explorer.exe`, `services.exe`, `lsass.exe`) are protected against accidental termination.
 - **Confirmation Tokens**: High-risk actions (shutdown, restart, sleep) require two-step vocal confirmation.
+- **Desktop Agent Authentication**: The Node bridge sends `X-MYRAA-AGENT-TOKEN` to the local Python agent. Set `MYRAA_AGENT_TOKEN` when running the agent separately; the integrated launcher passes the same token automatically.
 
 ---
 
