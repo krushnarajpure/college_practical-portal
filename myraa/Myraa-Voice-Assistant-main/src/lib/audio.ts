@@ -16,7 +16,7 @@ export type LiveState =
 
 const INPUT_SAMPLE_RATE = 16_000;
 const OUTPUT_SAMPLE_RATE = 24_000;
-const MIC_BUFFER_SIZE = 512; // 32 ms at 16 kHz
+const MIC_BUFFER_SIZE = 256; // 16 ms at 16 kHz for faster turn detection
 const MAX_WS_BACKLOG_BYTES = 96 * 1024;
 const BARGE_IN_RMS_THRESHOLD = 0.022;
 const BARGE_IN_COOLDOWN_MS = 250;

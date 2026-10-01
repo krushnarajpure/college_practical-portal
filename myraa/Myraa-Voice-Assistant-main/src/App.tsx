@@ -626,7 +626,15 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
                 callback({ result: JSON.stringify(result) });
                 return;
               }
-              const practicalId = String(args?.practicalId || '');
+              let practicalId = String(args?.practicalId || '');
+              if (!practicalId && name === 'openPortalPracticalPdf') {
+                const query = String(args?.query || '').trim().toLowerCase();
+                const result = await portalTools.listPracticals({ topic: query });
+                const candidates = result?.practicals || [];
+                if (!candidates.length) throw new Error(query ? `No practical matched "${query}".` : 'No practicals are available for your student account.');
+                const exact = query && candidates.find((item) => `${item.practicalNumber} ${item.title} ${item.subject}`.toLowerCase().includes(query));
+                practicalId = String((exact || candidates[0]).id);
+              }
               if (!practicalId) throw new Error('Choose a practical from the student practical list first.');
               if (name === 'readPortalPracticalPdf') {
                 const response = await portalTools.readPracticalPdf({ practicalId });

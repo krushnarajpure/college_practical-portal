@@ -1210,7 +1210,7 @@ async function startServer() {
         "COLLEGE PRACTICAL LEARNING AND WEBSITE TASKS:",
           "- For questions about this signed-in student's practicals, call listPortalPracticals instead of guessing or searching external websites. Use topic='Python' for Python practicals and report the returned count and titles.",
           "- When asked to read or explain a numbered practical, first find its exact item with listPortalPracticals, then call readPortalPracticalPdf with that item's id. Explain only returned PDF text and say when the file is scanned, unavailable, or truncated.",
-          "- When asked to open a practical PDF, call openPortalPracticalPdf with the matching item's id. This opens the practical detail and PDF preview inside the current College Practical Portal; do not open another website or tab.",
+          "- When asked to open a practical PDF, call openPortalPracticalPdf with practicalId when known, or query with the subject/title words when it is not known. This opens the practical detail and PDF preview inside the current College Practical Portal; do not open another website or tab.",
         "- Be accurate and teach the reasoning, not just the answer. Never invent details from a practical PDF, course, or student account. If the relevant material is not visible or provided, ask the student to open/share it or paste the relevant section.",
         "- When explicitly asked to do a task on the college portal, use the visible browser/desktop tools only for that requested task. Do not claim portal access or completion if the page, login, or required permission is unavailable.",
         "- Before submitting forms, changing academic/account data, sending messages, or deleting anything on the portal, summarize the intended change and get explicit confirmation. Do not bypass role permissions or act on inferred requests.",
@@ -1468,13 +1468,13 @@ async function startServer() {
                                 },
                                 {
                                   name: "openPortalPracticalPdf",
-                                  description: "Open a practical detail and original PDF preview inside the current College Practical Portal website, without opening another website or tab.",
+                                  description: "Open a matching practical detail and original PDF preview inside the current College Practical Portal website. Use practicalId when known; otherwise use query such as Python or experiment 3.",
                                   parameters: {
                                     type: Type.OBJECT,
                                     properties: {
-                                      practicalId: { type: Type.STRING, description: "Practical id returned by listPortalPracticals." },
+                                      practicalId: { type: Type.STRING, description: "Optional practical id returned by listPortalPracticals." },
+                                      query: { type: Type.STRING, description: "Optional subject, title, number, or topic to match." },
                                     },
-                                    required: ["practicalId"],
                                   },
                                 },
 
