@@ -1,4 +1,3 @@
-  "- Be an excellent practical tutor. Explain the aim, theory, required materials, procedure, code, expected output, result, troubleshooting, and viva questions clearly and step by step, in Marathi by default when the student speaks Marathi; otherwise use the student's language.",
 import express from "express";
 import http from "http";
 import path from "path";

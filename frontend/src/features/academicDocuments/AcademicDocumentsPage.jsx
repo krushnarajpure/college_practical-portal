@@ -467,7 +467,7 @@ function AcademicDocumentsPage({ role, notify }) {
   const semesterName = semesterLabel(document?.semesterId);
 
   if (isEdit || isAiEdit) return <>
-    {pageTitle(isAiEdit ? 'GEMINI ASSISTED' : 'DOCUMENT EDITOR', isAiEdit ? 'AI Edit with Gemini' : 'Manual Edit', document?.name || 'Create a separate edited version. The teacher-uploaded original remains unchanged.', <Link to={`${base}/${documentId}`} className="button button-secondary"><ArrowLeft size={15} />Back to document</Link>)}
+    {pageTitle(isAiEdit ? 'GEMINI ASSISTED' : 'DOCUMENT EDITOR', isAiEdit ? 'AI Edit with Gemini' : 'Edit PDF in website', document?.name || 'Create a separate edited version. The teacher-uploaded original remains unchanged.', <Link to={`${base}/${documentId}`} className="button button-secondary"><ArrowLeft size={15} />Back to document</Link>)}
     {isAiEdit ? <section className="surface academic-doc-editor">
       <label className="form-field academic-doc-wide"><span>Describe the changes</span><textarea rows="5" maxLength="2000" value={instruction} onChange={(event) => { setInstruction(event.target.value); clearEditedPreview(); }} placeholder="Change the student name to Krushna Rajpure and roll number to 112." /></label>
       <div className="academic-doc-prompts">{quickPrompts.map((prompt) => <button className="button button-secondary" type="button" key={prompt} onClick={() => { setInstruction((value) => `${value}${value ? ' ' : ''}${prompt}.`); clearEditedPreview(); }}>{prompt}</button>)}</div>

@@ -264,7 +264,7 @@ export const getEditableFields = async (req, res, next) => {
   try {
     const document = await getAuthorizedDocument(req);
     if (document.originalFile.mimeType !== 'application/pdf' && !document.originalFile.fileName.toLowerCase().endsWith('.pdf')) {
-      throw fail('Manual editing is currently available for fillable PDF forms only.', 422, 'DocumentEditingUnsupported');
+      throw fail('Manual editing is available for PDF files only.', 422, 'DocumentEditingUnsupported');
     }
     const buffer = await readGridFsFile(document.originalFile.fileId);
     const content = await getEditablePdfContent(buffer);
@@ -299,7 +299,7 @@ export const createManualEdit = async (req, res, next) => {
   try {
     const document = await getAuthorizedDocument(req);
     if (document.originalFile.mimeType !== 'application/pdf' && !document.originalFile.fileName.toLowerCase().endsWith('.pdf')) {
-      throw fail('Manual editing is currently available for fillable PDF forms only.', 422, 'DocumentEditingUnsupported');
+      throw fail('Manual editing is available for PDF files only.', 422, 'DocumentEditingUnsupported');
     }
     const formValues = req.body?.formValues || req.body?.values || {};
     const changes = req.body?.changes || [];
@@ -343,7 +343,7 @@ export const createAiEdit = async (req, res, next) => {
     const instruction = String(req.body?.instruction || '').trim();
     if (!instruction || instruction.length > 2000) throw fail('Describe the changes in 1 to 2000 characters.', 400, 'InvalidAiInstruction');
     if (document.originalFile.mimeType !== 'application/pdf' && !document.originalFile.fileName.toLowerCase().endsWith('.pdf')) {
-      throw fail('AI visual editing is currently supported only for fillable PDF forms.', 422, 'DocumentEditingUnsupported');
+      throw fail('AI editing is available for PDF files only.', 422, 'DocumentEditingUnsupported');
     }
     const source = await readGridFsFile(document.originalFile.fileId);
     let edit = { changes: req.body?.changes, formValues: req.body?.formValues };
