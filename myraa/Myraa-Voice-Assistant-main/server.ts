@@ -409,7 +409,7 @@ async function callDesktopAgent(
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT || process.env.MYRAA_PORT || 3000);
+  const PORT = Number(process.env.PORT) || 3001;
   const configuredOrigins = process.env.MYRAA_ALLOWED_ORIGINS || process.env.FRONTEND_URL ||
     (process.env.NODE_ENV === "production" ? "" : "http://localhost:5173,http://127.0.0.1:5173");
   const allowedOrigins = new Set(
@@ -1034,8 +1034,9 @@ async function startServer() {
 
   server.on("upgrade", (request, socket, head) => {
     const origin = request.headers.origin;
-    if (origin && !allowedOrigins.has(origin)) {
-      logError(`WEBSOCKET_ORIGIN_REJECTED ${origin}`);
+    const normalizedOrigin = origin?.replace(/\/$/, "");
+    if (normalizedOrigin && !allowedOrigins.has(normalizedOrigin)) {
+      logError(`WEBSOCKET_ORIGIN_REJECTED ${normalizedOrigin}`);
       socket.destroy();
       return;
     }
