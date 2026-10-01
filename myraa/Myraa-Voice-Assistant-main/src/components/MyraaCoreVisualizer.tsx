@@ -374,9 +374,9 @@ export const MyraaCoreVisualizer: React.FC<MyraaCoreVisualizerProps> = ({
         id="myraa-animated-presence"
         className="absolute z-10 w-full h-full flex items-center justify-center pointer-events-auto transition-all duration-700"
       >
-        <div className="relative w-full max-w-4xl aspect-[16/9] flex items-center justify-center scale-[0.95] sm:scale-110 select-none pointer-events-none md:max-h-[72vh] max-h-[62vh]">
+        <div className="relative w-[min(72vw,420px)] sm:w-[min(42vw,520px)] aspect-square flex items-center justify-center select-none pointer-events-none">
           {/* Subtle Outer Ambient Shadow Cast */}
-          <div className="absolute inset-0 rounded-[2.5rem] blur-[30px] opacity-20 bg-cyan-600/15 pointer-events-none mix-blend-screen" />
+          <div className="absolute inset-[8%] rounded-full blur-[30px] opacity-25 bg-cyan-600/15 pointer-events-none mix-blend-screen" />
 
           {/* IDLE VIDEO */}
           <video
@@ -386,14 +386,14 @@ export const MyraaCoreVisualizer: React.FC<MyraaCoreVisualizerProps> = ({
             muted
             playsInline
             autoPlay
-            className={`absolute inset-0 w-full h-full object-cover rounded-[2.5rem] transition-opacity duration-700 ease-in-out ${
+            className={`absolute inset-0 w-full h-full object-contain rounded-full transition-opacity duration-700 ease-in-out ${
               characterState === "idle"
                 ? "opacity-100 z-10 animate-fade-in"
                 : "opacity-0 z-0"
             }`}
             style={{
               maskImage:
-                "radial-gradient(circle, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 80%)",
+                "radial-gradient(circle, rgba(0,0,0,1) 58%, rgba(0,0,0,0) 86%)",
               WebkitMaskImage:
                 "radial-gradient(circle, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 80%)",
             }}
@@ -407,14 +407,14 @@ export const MyraaCoreVisualizer: React.FC<MyraaCoreVisualizerProps> = ({
             loop
             muted
             playsInline
-            className={`absolute inset-0 w-full h-full object-cover rounded-[2.5rem] transition-opacity duration-700 ease-in-out ${
+            className={`absolute inset-0 w-full h-full object-contain rounded-full transition-opacity duration-700 ease-in-out ${
               characterState === "thinking"
                 ? "opacity-100 z-10 animate-fade-in"
                 : "opacity-0 z-0"
             }`}
             style={{
               maskImage:
-                "radial-gradient(circle, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 80%)",
+                "radial-gradient(circle, rgba(0,0,0,1) 58%, rgba(0,0,0,0) 86%)",
               WebkitMaskImage:
                 "radial-gradient(circle, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 80%)",
             }}
@@ -428,14 +428,14 @@ export const MyraaCoreVisualizer: React.FC<MyraaCoreVisualizerProps> = ({
             loop
             muted
             playsInline
-            className={`absolute inset-0 w-full h-full object-cover rounded-[2.5rem] transition-opacity duration-700 ease-in-out ${
+            className={`absolute inset-0 w-full h-full object-contain rounded-full transition-opacity duration-700 ease-in-out ${
               characterState === "talking"
                 ? "opacity-100 z-10 animate-fade-in"
                 : "opacity-0 z-0"
             }`}
             style={{
               maskImage:
-                "radial-gradient(circle, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 80%)",
+                "radial-gradient(circle, rgba(0,0,0,1) 58%, rgba(0,0,0,0) 86%)",
               WebkitMaskImage:
                 "radial-gradient(circle, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 80%)",
             }}
@@ -443,14 +443,14 @@ export const MyraaCoreVisualizer: React.FC<MyraaCoreVisualizerProps> = ({
           />
 
           {/* Faint cybernetic visual edge grid guard */}
-          <div className="absolute inset-0 rounded-[2.5rem] border border-white/5 pointer-events-none bg-radial-gradient from-transparent to-black/35" />
+          <div className="absolute inset-0 rounded-full border border-white/10 pointer-events-none bg-radial-gradient from-transparent to-black/35" />
 
           {/* FALLBACK IMAGE AVATAR IF VIDEOS FAIL */}
           {hasError && (
             <img
               src={`${MYRAA_ASSET_PREFIX}/assets/pictures/myraa.png`}
               alt="Myraa"
-              className="absolute inset-0 w-full h-full object-contain rounded-[2.5rem] select-none pointer-events-none animate-fade-in"
+              className="absolute inset-0 w-full h-full object-contain rounded-full select-none pointer-events-none animate-fade-in"
               style={{
                 maskImage:
                   "radial-gradient(circle, rgba(0,0,0,1) 60%, rgba(0,0,0,0) 85%)",

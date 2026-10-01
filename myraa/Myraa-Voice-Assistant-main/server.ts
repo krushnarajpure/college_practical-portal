@@ -1196,7 +1196,7 @@ async function startServer() {
         "   - CLIPBOARD: Use 'getClipboard' ('Clipboard mein kya hai?'), 'setClipboard' ('Ye text clipboard mein copy karo'), 'copySelected' (Ctrl+C), 'pasteClipboard' (Ctrl+V), 'clearClipboard'.\n" +
         "   - HARDWARE & SYSTEM STATUS: Use 'batteryInfo' ('Battery kitni hai?'), 'networkStatus' ('WiFi status batao', 'Internet connection check karo'), 'systemInfo' (CPU %, RAM %, disk usage, uptime), 'gpuInfo' (NVIDIA GPU usage/temp), 'temperatureInfo'.\n" +
         "   - PROCESS MANAGEMENT: Use 'listProcesses' (sort by memory/cpu), 'killProcess' (terminate user process safely by name/pid; critical system processes are protected).\n" +
-        "   - WHATSAPP AUTOMATION: Use 'searchWhatsAppChat' to search a contact and 'sendWhatsAppMessage' to send messages.\n" +
+        "   - WHATSAPP AUTOMATION: Use 'searchWhatsAppChat' to find a contact. Never call 'sendWhatsAppMessage' immediately after a request; first repeat the exact contact and message and ask for explicit confirmation such as 'Yes, send it'. Only call the send tool after that confirmation. Apply the same confirmation rule to emails, posts, deletes, purchases, and important account changes.\n" +
         "   - PC AUDIO & POWER CONTROL: Use 'volumeUp', 'volumeDown', 'setVolume', 'muteToggle', and 'mediaPlayPause', 'mediaStop', 'mediaNext', 'mediaPrevious'. For DANGEROUS actions (shutdown/restart/sleep/lock) you MUST use the two-step flow: first call 'requestPowerAction' to get a confirmation token, then ASK KRUSHNA OUT LOUD to confirm.\n" +
         "   - SCREENSHOT & SCREEN READING: Use 'takeScreenshot', 'saveScreenshot', 'analyzeScreenshot' (OCR of screen), 'readScreen' (OCR of active window + title).\n" +
         "   - MULTI-STEP WORKFLOWS: When Krushna gives multi-step commands (e.g. 'Chrome kholo, YouTube kholo aur Arijit Singh search karo'), execute the required tools in sequence and give a concise, sweet confirmation once done (e.g. 'Done Kissu, Chrome kholkar YouTube par search kar diya!').\n" +
@@ -1211,6 +1211,7 @@ async function startServer() {
           "- For questions about this signed-in student's practicals, call listPortalPracticals instead of guessing or searching external websites. Use topic='Python' for Python practicals and report the returned count and titles.",
           "- When asked to read or explain a numbered practical, first find its exact item with listPortalPracticals, then call readPortalPracticalPdf with that item's id. Explain only returned PDF text and say when the file is scanned, unavailable, or truncated.",
           "- When asked to open a practical PDF, call openPortalPracticalPdf with practicalId when known, or query with the subject/title words when it is not known. This opens the practical detail and PDF preview inside the current College Practical Portal; do not open another website or tab.",
+        "- For website navigation commands, call navigatePortal with one of dashboard, practicals, academic-documents, subjects, bookmarks, profile, or back. Use the current authenticated portal session; never create a duplicate page or claim navigation without the tool result.",
         "- Be accurate and teach the reasoning, not just the answer. Never invent details from a practical PDF, course, or student account. If the relevant material is not visible or provided, ask the student to open/share it or paste the relevant section.",
         "- When explicitly asked to do a task on the college portal, use the visible browser/desktop tools only for that requested task. Do not claim portal access or completion if the page, login, or required permission is unavailable.",
         "- Before submitting forms, changing academic/account data, sending messages, or deleting anything on the portal, summarize the intended change and get explicit confirmation. Do not bypass role permissions or act on inferred requests.",
@@ -1477,6 +1478,21 @@ async function startServer() {
                                     },
                                   },
                                 },
+                                {
+                                  name: "navigatePortal",
+                                  description: "Navigate the current authenticated College Practical Portal to an existing page.",
+                                  parameters: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                      target: {
+                                        type: Type.STRING,
+                                        description: "Existing portal destination: dashboard, practicals, academic-documents, subjects, bookmarks, profile, or back.",
+                                        enum: ["dashboard", "practicals", "academic-documents", "subjects", "bookmarks", "profile", "back"],
+                                      },
+                                    },
+                                    required: ["target"],
+                                  },
+                                },
 
                                 // ======== DESKTOP CONTROL TOOLS (routed to Python agent) ========
                 {
@@ -1532,7 +1548,7 @@ async function startServer() {
                 {
                   name: "sendWhatsAppMessage",
                   description:
-                    "Search for a contact on WhatsApp and send them a text message.",
+                    "Send a WhatsApp message only after the user explicitly confirmed the exact prepared contact and message in the immediately preceding turn.",
                   parameters: {
                     type: Type.OBJECT,
                     properties: {

@@ -228,7 +228,10 @@ export class MyraaAudioSession {
         console.error("[Audio] Invalid server packet:", error);
       }
     };
-    ws.onerror = () => this.handleTransportLoss(ws);
+    ws.onerror = () => {
+      this.onError("MYRAA service is temporarily unavailable. Please try again.");
+      this.handleTransportLoss(ws);
+    };
     ws.onclose = () => this.handleTransportLoss(ws);
   }
 

@@ -53,9 +53,10 @@ interface PortalTools {
 interface AppProps {
   portalTools?: PortalTools;
   onOpenPortalPractical?: (practicalId: string) => void;
+  onNavigatePortal?: (target: string) => void;
 }
 
-export default function App({ portalTools, onOpenPortalPractical }: AppProps = {}) {
+export default function App({ portalTools, onOpenPortalPractical, onNavigatePortal }: AppProps = {}) {
   const [state, setState] = useState<LiveState>("disconnected");
 
   // Real-time Screen Sharing states
@@ -602,6 +603,13 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
       },
       onTranscription: (role, text) => {
         if (role === "user") {
+          const command = text.toLowerCase().trim();
+          if (/\b(stop|sleep)\s+myraa\b|\bmyraa\s+(stop|sleep)\b/.test(command)) {
+            sessionRef.current?.disconnect();
+            setErrorText(null);
+            setModelCaption("MYRAA stopped. Press the power button when you are ready.");
+            return;
+          }
           // Clear previous model caption when user speaks
           setModelCaption("");
           setCharacterState("thinking");
@@ -617,10 +625,16 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
       onToolCall: (name, args, callback) => {
         console.log(`[App] Tool call triggered: ${name}`, args);
 
-        if (['listPortalPracticals', 'readPortalPracticalPdf', 'openPortalPracticalPdf'].includes(name)) {
+        if (['listPortalPracticals', 'readPortalPracticalPdf', 'openPortalPracticalPdf', 'navigatePortal'].includes(name)) {
           void (async () => {
             try {
               if (!portalTools) throw new Error('Portal practical tools are available only inside the signed-in student website.');
+              if (name === 'navigatePortal') {
+                if (!onNavigatePortal) throw new Error('Portal navigation is unavailable here.');
+                onNavigatePortal(String(args?.target || 'dashboard'));
+                callback({ result: `Opened ${String(args?.target || 'dashboard')} in the current College Practical Portal.` });
+                return;
+              }
               if (name === 'listPortalPracticals') {
                 const result = await portalTools.listPracticals({ topic: String(args?.topic || '') });
                 callback({ result: JSON.stringify(result) });
@@ -742,7 +756,13 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
         }
       },
       onError: (err) => {
-        setErrorText(err);
+        const raw = String(err || "");
+        const message = /notallowed|permission|microphone/i.test(raw)
+          ? "Microphone permission is needed. Allow microphone access and reconnect MYRAA."
+          : /fetch|network|websocket|temporarily unavailable/i.test(raw)
+            ? "MYRAA service is temporarily unavailable. Please reconnect and try again."
+            : "MYRAA could not complete that request. Please try again.";
+        setErrorText(message);
       },
       onActionStatus: (statusData) => {
         const info = formatActionInfo(statusData.name, statusData.args);
@@ -791,6 +811,20 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
   };
   // V2: keep the ref in sync so the wake-word callback calls this exact handler.
   connectHandlerRef.current = handleToggleConnection;
+
+  const statusLabel = errorText
+    ? "Something went wrong"
+    : activeAction?.status === "running"
+      ? "Executing..."
+      : state === "disconnected"
+        ? "Ready"
+        : state === "connecting"
+          ? "Thinking..."
+          : state === "speaking"
+            ? "Speaking..."
+            : characterState === "thinking"
+              ? "Thinking..."
+              : "Listening...";
 
   // Maps theme colors to CSS ambient light spots
   const getAmbientStyles = () => {
@@ -850,7 +884,7 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
   return (
     <div
       id="myraa-holographic-desktop"
-      className={`relative w-full h-screen overflow-hidden bg-[#020205] text-white ${getAmbientStyles()} theme-transition flex flex-col justify-between p-6 sm:p-10 select-none`}
+      className={`relative w-full h-screen min-h-[560px] overflow-hidden bg-[#020205] text-white ${getAmbientStyles()} theme-transition flex flex-col justify-between p-4 sm:p-8 select-none`}
     >
       {/* Ambient Background Gradients matching Frosted Glass theme */}
       <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-purple-900/15 rounded-full blur-[120px] pointer-events-none" />
@@ -978,7 +1012,7 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
       </AnimatePresence>
 
       {/* CORE AVATAR AND VISUALS */}
-      <main className="relative z-10 flex-1 w-full max-w-4xl mx-auto flex flex-col items-center justify-between py-6">
+      <main className="relative z-10 flex-1 w-full max-w-4xl mx-auto flex flex-col items-center justify-between py-3 sm:py-6">
         {/* Space Spacer to avoid head area */}
         <div className="h-10 sm:h-20" />
 
@@ -989,20 +1023,9 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
         >
           <AnimatePresence mode="wait">
             {(() => {
-              const statusText =
-                state === "listening"
-                  ? characterState === "thinking"
-                    ? "Thinking..."
-                    : "I am listening. Speak freely..."
-                  : state === "speaking"
-                    ? "Speaking..."
-                    : state === "connecting"
-                      ? "Materializing presence links..."
-                      : "Connect memory core to awaken my voice.";
-
               return (
                 <motion.div
-                  key={statusText}
+                  key={statusLabel}
                   initial={{ opacity: 0, y: 10, filter: "blur(4px)" }}
                   animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
                   exit={{ opacity: 0, y: -10, filter: "blur(4px)" }}
@@ -1010,7 +1033,7 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
                   className="flex flex-col items-center justify-center w-full"
                 >
                   <span className="text-xs sm:text-sm uppercase tracking-[0.3em] font-medium text-white/40 font-sans drop-shadow-[0_1px_4px_rgba(0,0,0,0.5)]">
-                    {statusText}
+                    {statusLabel}
                   </span>
                 </motion.div>
               );
@@ -1103,7 +1126,7 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
       </main>
 
       {/* FOOTER INTERFACE WITH WAVEFORM AND CONTROLS */}
-      <footer className="relative z-10 w-full max-w-2xl mx-auto flex flex-col items-center gap-5 mt-auto">
+      <footer className="relative z-10 w-full max-w-2xl mx-auto flex flex-col items-center gap-3 sm:gap-5 mt-auto pb-1">
         {/* Dynamic Minimalist Waveform Visualizer */}
         <div className="flex items-center justify-center gap-1 h-8 w-44">
           {[12, 28, 16, 32, 20, 8].map((baseHeight, idx) => {
@@ -1136,7 +1159,7 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
         </div>
 
         {/* Glossy Beautiful Primary Connector Core Node */}
-        <div className="flex items-center justify-center relative mb-4">
+        <div className="flex items-center justify-center relative mb-2 sm:mb-4">
           <button
             onClick={handleToggleConnection}
             className={`w-20 h-20 rounded-full flex items-center justify-center transition-all duration-500 cursor-pointer ${
@@ -1160,6 +1183,16 @@ export default function App({ portalTools, onOpenPortalPractical }: AppProps = {
               <Volume2 size={24} className="text-white" />
             )}
           </button>
+
+          {state !== "disconnected" && (
+            <button
+              onClick={() => sessionRef.current?.disconnect()}
+              className="absolute top-[calc(100%+10px)] left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-rose-400/30 bg-rose-500/10 px-3 py-2 text-[10px] font-mono uppercase tracking-wider text-rose-200 hover:bg-rose-500/20"
+              title="Stop MYRAA"
+            >
+              Stop
+            </button>
+          )}
 
           {/* Quiet Reset Projection Anchor */}
           {(activeProjectorUrl || errorText) && (

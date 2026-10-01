@@ -48,5 +48,21 @@ export default function MyraaIntegrated() {
     };
   }, []);
 
-  return <section className="myraa-integrated-shell"><ApiKeyGate><MyraaApp portalTools={portalTools} onOpenPortalPractical={(id) => navigate(`/student/practicals/${id}`)} /></ApiKeyGate></section>;
+  const navigatePortal = (target) => {
+    const routes = {
+      dashboard: '/student/dashboard',
+      practicals: '/student/practicals',
+      'academic-documents': '/student/academic-documents',
+      subjects: '/student/subjects',
+      bookmarks: '/student/bookmarks',
+      profile: '/student/profile'
+    };
+    if (target === 'back') {
+      navigate(-1);
+      return;
+    }
+    navigate(routes[target] || routes.dashboard);
+  };
+
+  return <section className="myraa-integrated-shell"><ApiKeyGate><MyraaApp portalTools={portalTools} onOpenPortalPractical={(id) => navigate(`/student/practicals/${id}`)} onNavigatePortal={navigatePortal} /></ApiKeyGate></section>;
 }
