@@ -6239,6 +6239,10 @@ body {
   box-shadow: 0 0 0 3px var(--blue-soft);
 }
 
+.input-with-icon input {
+  padding-left: 35px;
+}
+
 .public-header {
   background: var(--paper);
   border-color: var(--line);
