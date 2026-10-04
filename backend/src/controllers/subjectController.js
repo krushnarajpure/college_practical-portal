@@ -36,8 +36,10 @@ export const getAllSubjects = async (req, res, next) => {
     }
     if (req.user?.role === 'teacher') {
       const teacher = await User.findById(req.user.id).select('departmentId assignedSubjects');
-      if (teacher?.assignedSubjects?.length) filter._id = { $in: teacher.assignedSubjects };
-      else if (teacher?.departmentId) filter.departmentId = teacher.departmentId;
+      const accessRules = [];
+      if (teacher?.assignedSubjects?.length) accessRules.push({ _id: { $in: teacher.assignedSubjects } });
+      if (teacher?.departmentId) accessRules.push({ departmentId: teacher.departmentId });
+      if (accessRules.length) filter.$or = accessRules;
       else filter._id = { $in: [] };
     }
 

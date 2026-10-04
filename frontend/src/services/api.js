@@ -1,4 +1,20 @@
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const REQUEST_TIMEOUT_MS = 15000;
+
+async function fetchWithTimeout(url, options) {
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error('The server took too long to respond. Please try again.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
 
 async function request(path, options = {}) {
   const { method = 'GET', body, headers = {}, query = {} } = options;
@@ -15,7 +31,7 @@ async function request(path, options = {}) {
     ? localStorage.getItem('college_practical_token')
     : null;
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method,
     headers: {
       ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
@@ -43,7 +59,7 @@ async function requestBlob(path, options = {}) {
   const token = typeof localStorage !== 'undefined'
     ? localStorage.getItem('college_practical_token')
     : null;
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method,
     credentials: 'include',
     headers: {

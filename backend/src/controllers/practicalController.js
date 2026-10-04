@@ -5,6 +5,7 @@ import User from '../models/User.js';
 import { getGridFSBucket } from '../config/storage.js';
 import pdfService from '../services/pdfService.js';
 import aiService from '../services/aiService.js';
+import notificationService from '../services/notificationService.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 
 const populatedPractical = (query) => query.populate(['subjectId', 'departmentId', 'yearId', 'semesterId']);
@@ -25,7 +26,7 @@ function normalizeList(value) {
 
 async function getAccount(req) {
   if (!validId(req.user?.id)) return null;
-  return User.findById(req.user.id).select('role status departmentId yearId semesterId assignedSubjects');
+  return User.findById(req.user.id).select('name role status departmentId yearId semesterId assignedSubjects');
 }
 
 async function getMappedSubject({ subjectId, departmentId, yearId, semesterId }) {
@@ -45,8 +46,27 @@ async function canManage(account, practical) {
   return account?.role === 'teacher' && sameId(practical.createdBy, account._id);
 }
 
+function canTeachSubject(account, subject, departmentId) {
+  if (account?.role !== 'teacher') return true;
+  if (account.assignedSubjects?.some((id) => sameId(id, subject._id))) return true;
+  return Boolean(account.departmentId && sameId(account.departmentId, departmentId));
+}
+
 function deny(res) {
   return res.status(403).json(errorResponse('You are not allowed to manage this practical.', 'Forbidden', 403));
+}
+
+async function recordTeacherPracticalActivity(account, practical, action, verb) {
+  if (account.role !== 'teacher') return;
+  const subjectName = practical.subjectId?.name || (await Subject.findById(practical.subjectId).select('name'))?.name || 'a subject';
+  await notificationService.createAdminActivity({
+    actorId: account._id,
+    action,
+    entityType: 'practical',
+    entityId: practical._id,
+    practicalId: practical._id,
+    message: `${account.name} ${verb} "${practical.title}" (${subjectName}, Practical ${practical.practicalNumber}).`
+  });
 }
 
 export const getAllPracticals = async (req, res, next) => {
@@ -116,9 +136,7 @@ export const createPractical = async (req, res, next) => {
     const { subjectId, departmentId, yearId, semesterId, practicalNumber, title } = req.body;
     const subject = await getMappedSubject({ subjectId, departmentId, yearId, semesterId });
     if (!subject) return res.status(400).json(errorResponse('Choose a subject that matches the selected department, year and semester.', 'Bad Request', 400));
-    if (account.role === 'teacher' && !account.departmentId && !account.assignedSubjects?.length) return deny(res);
-    if (account.role === 'teacher' && account.departmentId && !sameId(account.departmentId, departmentId)) return deny(res);
-    if (account.role === 'teacher' && account.assignedSubjects?.length && !account.assignedSubjects.some((id) => sameId(id, subject._id))) return deny(res);
+    if (!canTeachSubject(account, subject, departmentId)) return deny(res);
     if (!Number.isInteger(Number(practicalNumber)) || Number(practicalNumber) < 1 || !String(title || '').trim()) {
       return res.status(400).json(errorResponse('A positive practical number and title are required.', 'Bad Request', 400));
     }
@@ -135,6 +153,7 @@ export const createPractical = async (req, res, next) => {
       updatedBy: account._id
     });
     const result = await populatedPractical(Practical.findById(practical._id));
+    await recordTeacherPracticalActivity(account, practical, 'practical_created', 'created');
     return res.status(201).json(successResponse('Practical created.', { practical: result }));
   } catch (error) {
     next(error);
@@ -173,9 +192,7 @@ export const updatePractical = async (req, res, next) => {
       };
       const subject = await getMappedSubject(mapping);
       if (!subject) return res.status(400).json(errorResponse('Choose a subject that matches the selected department, year and semester.', 'Bad Request', 400));
-      if (account.role === 'teacher' && !account.departmentId && !account.assignedSubjects?.length) return deny(res);
-      if (account.role === 'teacher' && account.departmentId && !sameId(account.departmentId, subject.departmentId)) return deny(res);
-      if (account.role === 'teacher' && account.assignedSubjects?.length && !account.assignedSubjects.some((id) => sameId(id, subject._id))) return deny(res);
+      if (!canTeachSubject(account, subject, subject.departmentId)) return deny(res);
       Object.assign(updates, mapping);
     }
     updates.updatedBy = account._id;
@@ -186,6 +203,7 @@ export const updatePractical = async (req, res, next) => {
 
     await Practical.findByIdAndUpdate(practical._id, { $set: updates }, { runValidators: true });
     const updated = await populatedPractical(Practical.findById(practical._id));
+    await recordTeacherPracticalActivity(account, updated, 'practical_updated', 'updated');
     return res.status(200).json(successResponse('Practical updated.', { practical: updated }));
   } catch (error) {
     next(error);
@@ -201,6 +219,7 @@ export const deletePractical = async (req, res, next) => {
     if (!(await canManage(account, practical))) return deny(res);
     if (practical.pdfId) await pdfService.deletePdf(practical.pdfId);
     await practical.deleteOne();
+    await recordTeacherPracticalActivity(account, practical, 'practical_deleted', 'deleted');
     return res.status(200).json(successResponse('Practical deleted.', {}));
   } catch (error) {
     next(error);
@@ -223,6 +242,7 @@ async function setPublishedState(req, res, next, status) {
     if (status === 'published') practical.teacherApproved = true;
     await practical.save();
     const result = await populatedPractical(Practical.findById(practical._id));
+    await recordTeacherPracticalActivity(account, practical, status === 'published' ? 'practical_published' : 'practical_unpublished', status === 'published' ? 'published' : 'unpublished');
     return res.status(200).json(successResponse(`Practical ${status === 'published' ? 'published' : 'unpublished'}.`, { practical: result }));
   } catch (error) {
     next(error);
@@ -260,6 +280,7 @@ export const analyzePractical = async (req, res, next) => {
     });
     await practical.save();
     const result = await populatedPractical(Practical.findById(practical._id));
+    await recordTeacherPracticalActivity(account, practical, 'practical_analyzed', 'uploaded and analyzed a PDF for');
     return res.status(200).json(successResponse('PDF analysis saved for teacher review.', { practical: result }));
   } catch (error) {
     next(error);

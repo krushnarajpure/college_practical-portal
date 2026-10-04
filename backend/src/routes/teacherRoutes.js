@@ -2,6 +2,9 @@ import express from 'express';
 import {
   getTeacherDashboard,
   getAssignedSubjects,
+  getAvailableSubjects,
+  assignSubject,
+  createTeacherSubject,
   getTeacherStudents
 } from '../controllers/teacherController.js';
 import {
@@ -23,6 +26,9 @@ router.use(authenticateUser, requireRole('teacher'));
 
 router.get('/dashboard', getTeacherDashboard);
 router.get('/subjects', getAssignedSubjects);
+router.get('/subjects/available', getAvailableSubjects);
+router.post('/subjects/create', createTeacherSubject);
+router.post('/subjects', assignSubject);
 router.get('/practicals', getTeacherPracticals);
 router.post('/practicals', createPractical);
 router.get('/practicals/:id', getPracticalById);

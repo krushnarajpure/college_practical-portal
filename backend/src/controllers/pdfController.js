@@ -2,8 +2,10 @@ import { ObjectId } from 'mongodb';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import User from '../models/User.js';
 import Practical from '../models/Practical.js';
+import Subject from '../models/Subject.js';
 import { getGridFSBucket } from '../config/storage.js';
 import pdfService from '../services/pdfService.js';
+import notificationService from '../services/notificationService.js';
 import { successResponse } from '../utils/apiResponse.js';
 
 const makeError = (message, statusCode, name = 'PdfRequestError') => Object.assign(new Error(message), { statusCode, name });
@@ -11,7 +13,7 @@ const isValidId = (value) => typeof value === 'string' && /^[a-f\d]{24}$/i.test(
 
 async function getActiveUser(tokenUser) {
   if (!isValidId(tokenUser?.id)) throw makeError('Authentication required.', 401, 'Unauthorized');
-  const user = await User.findById(tokenUser.id).select('role status departmentId yearId semesterId assignedSubjects');
+  const user = await User.findById(tokenUser.id).select('name role status departmentId yearId semesterId assignedSubjects');
   if (!user || user.status !== 'active') throw makeError('Account is unavailable.', 403, 'Forbidden');
   return user;
 }
@@ -85,6 +87,17 @@ export const uploadPdf = async (req, res, next) => {
       uploadedBy: req.pdfUploadContext.user._id,
       file: req.file
     });
+    if (req.pdfUploadContext.user.role === 'teacher') {
+      const subject = await Subject.findById(req.pdfUploadContext.practical.subjectId).select('name');
+      await notificationService.createAdminActivity({
+        actorId: req.pdfUploadContext.user._id,
+        action: 'practical_pdf_uploaded',
+        entityType: 'practical',
+        entityId: req.pdfUploadContext.practical._id,
+        practicalId: req.pdfUploadContext.practical._id,
+        message: `${req.pdfUploadContext.user.name} uploaded the original PDF for "${req.pdfUploadContext.practical.title}" (${subject?.name || 'Subject'}).`
+      });
+    }
 
     return res.status(201).json(successResponse('Original PDF uploaded successfully.', {
       pdfId: pdf._id,
@@ -180,6 +193,17 @@ export const deletePdf = async (req, res, next) => {
     if (!teacherCanManage(user, practical)) throw makeError('Only the practical owner or an admin can delete this PDF.', 403, 'Forbidden');
 
     await pdfService.deletePdf(pdf._id);
+    if (user.role === 'teacher') {
+      const subject = await Subject.findById(practical.subjectId).select('name');
+      await notificationService.createAdminActivity({
+        actorId: user._id,
+        action: 'practical_pdf_deleted',
+        entityType: 'practical',
+        entityId: practical._id,
+        practicalId: practical._id,
+        message: `${user.name} removed the original PDF from "${practical.title}" (${subject?.name || 'Subject'}).`
+      });
+    }
     return res.status(200).json(successResponse('PDF and GridFS file deleted.', { pdfId: pdf._id }));
   } catch (error) {
     return next(error);

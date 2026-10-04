@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { FilePlus2, LoaderCircle, Sparkles, X } from 'lucide-react';
 import api from '../../services/api';
 import pdfService from '../../services/pdfService';
@@ -82,6 +82,7 @@ export default function TeacherPracticalModal({ practical, user, notify, onSaved
     idOf(item.yearId) === fields.yearId &&
     idOf(item.semesterId) === fields.semesterId
   );
+  const selectedSubject = subjects.find((item) => idOf(item) === fields.subjectId);
   const update = (key) => (event) => setFields((current) => ({ ...current, [key]: event.target.value }));
 
   const save = async (event) => {
@@ -180,6 +181,8 @@ export default function TeacherPracticalModal({ practical, user, notify, onSaved
           <label className="form-field"><span>Practical number</span><input required type="number" min="1" step="1" value={fields.practicalNumber} onChange={update('practicalNumber')} /></label>
           <label className="form-field"><span>Practical title</span><input required value={fields.title} onChange={update('title')} placeholder="e.g. Introduction to Java" /></label>
         </div>
+        {!loadingCatalog && catalog.subjects.length === 0 && <p className="form-alert form-alert-error">No subjects are assigned to you yet. <Link to="/teacher/subjects">Add a subject assignment</Link> before creating a practical.</p>}
+        {selectedSubject && <p className="muted-inline">After publishing, this practical will be available to students in {selectedSubject.departmentId?.name || 'the selected department'} · {selectedSubject.yearId?.name || 'the selected year'} · {selectedSubject.semesterId?.name || 'the selected semester'}.</p>}
 
         {(!activePractical?.pdfId || file) && <label className="practical-upload-field">
           <input type="file" accept="application/pdf,.pdf" onChange={(event) => setFile(event.target.files?.[0] || null)} />

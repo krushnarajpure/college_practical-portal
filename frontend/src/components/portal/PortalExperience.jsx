@@ -20,8 +20,10 @@ import pdfService from '../../services/pdfService';
 import AcademicDocumentsPage from '../../features/academicDocuments/AcademicDocumentsPage';
 import progressService from '../../services/progressService';
 import bookmarkService from '../../services/bookmarkService';
-import { getAcademicYearOptions } from '../../utils/academicYear';
+import notificationService from '../../services/notificationService';
 import TeacherPracticalModal from './TeacherPracticalModal';
+import TeacherSubjectModal from './TeacherSubjectModal';
+import WorkspaceLoading from '../common/WorkspaceLoading';
 import MyraaIntegrated from '../../features/myraa/MyraaIntegrated';
 
 const roleHome = { admin: '/admin/dashboard', teacher: '/teacher/dashboard', student: '/student/dashboard' };
@@ -109,7 +111,7 @@ function ProfileAvatar({ name, photoUrl, size = 'md' }) {
   );
 }
 
-function DashboardShell({ role, children, search, setSearch, notificationOpen, setNotificationOpen, mobileOpen, setMobileOpen, onLogout, user, searchSubjects = [], searchPracticals = [] }) {
+function DashboardShell({ role, children, search, setSearch, notificationOpen, setNotificationOpen, mobileOpen, setMobileOpen, onLogout, user, searchSubjects = [], searchPracticals = [], notificationItems = [], onNotificationRead }) {
   const roleNav = {
     student: [
       ['Overview', '/student/dashboard', LayoutDashboard], ['My subjects', '/student/subjects', BookOpen],
@@ -133,7 +135,10 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
   const scope = role === 'student'
     ? [user?.departmentId?.code || user?.departmentId?.name || user?.departmentId, user?.yearId?.name || user?.yearId, user?.semesterId?.name || user?.semesterId].filter(Boolean).join(' · ') || 'Academic assignment not set'
     : roleNames[role];
-  const roleNotifications = notifications.filter((item) => item.role === role);
+  const roleNotifications = role === 'admin'
+    ? notificationItems
+    : notifications.filter((item) => item.role === role);
+  const unreadCount = roleNotifications.filter((item) => !item.read).length;
   const [profileOpen, setProfileOpen] = useState(false);
   const profilePhotoUrl = useProfilePhoto(user);
 
@@ -155,7 +160,7 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
         <div className="topbar-actions">
           <label className="global-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search subjects, practicals..." aria-label="Search subjects and practicals" />{search && <button onClick={() => setSearch('')} aria-label="Clear search"><X size={14} /></button>}<kbd>⌘ K</kbd></label>
           {search && <div className="search-popover">{[...searchSubjects.filter((item) => item.name?.toLowerCase().includes(search.toLowerCase())).slice(0, 3).map((item) => ({ label: item.name, to: role === 'student' ? `/student/subjects/${item._id || item.id}` : `/${role}/subjects` })), ...searchPracticals.filter((item) => item.title?.toLowerCase().includes(search.toLowerCase())).slice(0, 3).map((item) => ({ label: item.title, to: role === 'student' ? `/student/practicals/${item._id || item.id}` : `/${role}/practicals/${item._id || item.id}` }))].map((result, index) => <Link key={`${result.label}-${index}`} to={result.to} onClick={() => setSearch('')}><Search size={14} />{result.label}<ArrowRight size={14} /></Link>)}{!searchSubjects.some((item) => item.name?.toLowerCase().includes(search.toLowerCase())) && !searchPracticals.some((item) => item.title?.toLowerCase().includes(search.toLowerCase())) && <span className="search-empty">No matching learning material</span>}</div>}
-          <div className="topbar-menu-wrap"><button className={`icon-button notification-trigger ${notificationOpen ? 'is-active' : ''}`} onClick={() => setNotificationOpen(!notificationOpen)} aria-label="Notifications"><Bell size={18} /></button>{notificationOpen && <div className="notification-popover"><div className="popover-heading"><strong>Notifications</strong><button className="text-link" onClick={() => setNotificationOpen(false)}>Close</button></div>{roleNotifications.length ? roleNotifications.map((item) => <div className="notification-item" key={item.id}><span className="notification-dot" /><div><strong>{item.title}</strong><small>{item.time}</small></div></div>) : <p className="popover-empty">No notifications yet.</p>}<Link to={`/${role}/notifications`} className="popover-footer" onClick={() => setNotificationOpen(false)}>View all notifications <ArrowRight size={14} /></Link></div>}</div>
+          <div className="topbar-menu-wrap"><button className={`icon-button notification-trigger ${notificationOpen ? 'is-active' : ''}`} onClick={() => setNotificationOpen(!notificationOpen)} aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}><Bell size={18} />{unreadCount > 0 && <i />}</button>{notificationOpen && <div className="notification-popover"><div className="popover-heading"><strong>Notifications</strong><button className="text-link" onClick={() => setNotificationOpen(false)}>Close</button></div>{roleNotifications.length ? roleNotifications.slice(0, 6).map((item) => <button type="button" className={`notification-item ${item.read ? 'notification-read' : ''}`} key={item._id || item.id} onClick={() => !item.read && onNotificationRead?.(item)}><span className="notification-dot" /><span><strong>{item.message || item.title}</strong><small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : item.time}</small></span></button>) : <p className="popover-empty">No notifications yet.</p>}<Link to={`/${role}/notifications`} className="popover-footer" onClick={() => setNotificationOpen(false)}>View all notifications <ArrowRight size={14} /></Link></div>}</div>
           <div className="topbar-menu-wrap"><button className="profile-trigger" onClick={() => setProfileOpen(!profileOpen)}><ProfileAvatar name={user?.name} photoUrl={profilePhotoUrl} size="sm" /><span className="profile-trigger-copy"><strong>{user?.name || roleNames[role]}</strong><small>{scope}</small></span><ChevronDown size={15} /></button>{profileOpen && <div className="profile-menu"><Link to={`/${role}/profile`} onClick={() => setProfileOpen(false)}>View profile</Link><button onClick={onLogout}>Sign out</button></div>}</div>
         </div>
       </header>
@@ -588,12 +593,15 @@ function TeacherDashboard({ practicalList, user, subjectList = [] }) {
   return <><PageHeading eyebrow="FACULTY WORKSPACE" title={`Welcome, ${user?.name || 'Teacher'}`} description="Manage your course material and guide students through their practical work." actions={<Link to="/teacher/practicals/add" className="button button-primary"><Plus size={16} />Add practical</Link>} /><div className="stat-grid"><Stat label="Assigned subjects" value={assignedSubjects.length} note="Current assignments" icon={BookOpen} /><Stat label="Total practicals" value={owned.length} note="Across your subjects" icon={ClipboardList} tone="green" /><Stat label="Published" value={owned.filter((item) => item.published).length} note="Visible to students" icon={CheckCircle2} tone="blue" /><Stat label="Drafts" value={owned.filter((item) => !item.published).length} note="Awaiting review" icon={FileText} tone="amber" /></div><div className="dashboard-columns"><section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">CONTENT ACTIVITY</p><h2>Recently updated</h2></div><Link to="/teacher/practicals" className="text-link">All practicals <ArrowRight size={14} /></Link></div>{owned.length ? owned.slice(0, 4).map((item) => <div className="activity-row" key={item.id}><span className="activity-file"><FileText size={17} /></span><div><strong>{item.title}</strong><small>{subjects.find((subject) => subject.id === item.subjectId)?.name} · Practical {number(item.practicalNumber)}</small></div><Status>{item.published ? 'Published' : 'Draft'}</Status></div>) : <EmptyState title="No practicals yet" text="Your published and draft practicals will appear here." icon={ClipboardList} />}</section><section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">YOUR COURSES</p><h2>Assigned subjects</h2></div></div>{assignedSubjects.length ? assignedSubjects.map((subject) => <Link to="/teacher/subjects" className="course-row" key={subject.id}><span className="subject-monogram">{subject.name.slice(0, 2).toUpperCase()}</span><span><strong>{subject.name}</strong><small>{subject.code}</small></span><ChevronRight size={16} /></Link>) : <EmptyState title="No subjects assigned" text="Your college will assign subjects to your account." icon={BookOpen} />}</section></div></>;
 }
 
-function TeacherSubjects({ subjectList = [] }) {
+function TeacherSubjects({ subjectList = [], onAssigned, notify }) {
   const assigned = subjectList.map(normalizeSubjectFromApi).filter(Boolean);
-  const subjects = assigned;
-  const departments = subjects.map((item) => ({ id: item.departmentId, name: item.departmentName }));
-  const semesters = subjects.map((item) => ({ id: item.semesterId, name: item.semesterName }));
-  return <><PageHeading eyebrow="FACULTY WORKSPACE" title="My subjects" description="Courses assigned to you for the current semester." />{assigned.length ? <div className="subject-grid">{assigned.map((subject) => <article className="subject-tile teacher-subject" key={subject.id}><div className="tile-top"><span className="subject-monogram">{subject.name.slice(0, 2).toUpperCase()}</span><span className="tile-code">{subject.code}</span></div><h3>{subject.name}</h3><p>{subject.description}</p><div className="tile-footer"><span><ClipboardList size={15} />{subject.practicalCount} practicals</span><span className="muted-inline">{departments.find((item) => item.id === subject.departmentId)?.name || subject.departmentId} · {semesters.find((item) => item.id === subject.semesterId)?.name || subject.semesterId}</span></div></article>)}</div> : <EmptyState title="No assigned subjects" text="Your assigned subjects will appear here." />}</>;
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  return <>
+    <PageHeading eyebrow="FACULTY WORKSPACE" title="My subjects" description="Manage your teaching assignments across departments and year groups." actions={<Button icon={Plus} onClick={() => setDialogOpen(true)}>Add subject</Button>} />
+    {assigned.length ? <div className="subject-grid">{assigned.map((subject) => <article className="subject-tile teacher-subject" key={subject.id}><div className="tile-top"><span className="subject-monogram">{subject.name.slice(0, 2).toUpperCase()}</span><span className="tile-code">{subject.code}</span></div><h3>{subject.name}</h3><p>{subject.description || 'Practical materials and class details for this subject.'}</p><div className="tile-footer"><span><ClipboardList size={15} />{subject.practicalCount} practicals</span><span className="muted-inline">{subject.departmentName || 'Department'} · {subject.yearName || 'Year'} · {subject.semesterName || 'Semester'}</span></div></article>)}</div> : <EmptyState title="No assigned subjects" text="Add an existing subject or create a new subject for its class." action={<Button icon={Plus} onClick={() => setDialogOpen(true)}>Add subject</Button>} />}
+    {dialogOpen && <TeacherSubjectModal onClose={() => setDialogOpen(false)} onSaved={onAssigned} notify={notify} />}
+  </>;
 }
 
 function TeacherPracticalList({ practicalList, subjectList = [], subjectIds, onDelete, onTogglePublish, notify }) {
@@ -623,20 +631,49 @@ function TeacherStudents({ studentList = [] }) {
   return <><PageHeading eyebrow="CLASS ROSTER" title="Students" description="Students registered in your department." />{studentList.length ? <div className="surface data-table-wrap"><table className="data-table"><thead><tr><th>Student</th><th>Roll number</th><th>Department</th><th>Year / semester</th></tr></thead><tbody>{studentList.map((item) => <tr key={item._id}><td><span className="person-cell"><span className="avatar">{item.name?.split(' ').map((part) => part[0]).join('') || 'S'}</span><span><strong>{item.name}</strong><small>{item.email}</small></span></span></td><td>{item.studentId || 'Not provided'}</td><td>{item.departmentId?.name || 'Not assigned'}</td><td>{[item.yearId?.name, item.semesterId?.name].filter(Boolean).join(' · ') || 'Not assigned'}</td></tr>)}</tbody></table></div> : <EmptyState title="No students registered" text="Student accounts will appear here after registration." icon={Users} />}</>;
 }
 
-function AdminDashboard({ practicalList, teacherList = [], studentList = [], catalog, subjectList = [] }) {
+function AdminDashboard({ practicalList, teacherList = [], studentList = [], catalog, subjectList = [], adminNotifications = [] }) {
   const departments = catalog.departments;
   const years = catalog.years;
   const semesters = catalog.semesters;
   const subjects = subjectList;
   const teachers = teacherList;
   const students = studentList;
+  const latestPracticals = [...practicalList]
+    .sort((left, right) => {
+      const leftUpdated = Date.parse(left.updatedAt || left.createdAt || '') || 0;
+      const rightUpdated = Date.parse(right.updatedAt || right.createdAt || '') || 0;
+      return rightUpdated - leftUpdated;
+    })
+    .slice(0, 5);
   const quickAccess = [
     ['Departments', '/admin/departments', Building2, departments.length],
     ['Academic years', '/admin/years', GraduationCap, years.length],
     ['Semesters', '/admin/semesters', Activity, semesters.length],
-    ['Subjects', '/admin/subjects', BookOpen, subjects.length]
+    ['Subjects', '/admin/subjects', BookOpen, subjects.length],
+    ['Teachers', '/admin/teachers', Users, teachers.length],
+    ['Students', '/admin/students', GraduationCap, students.length],
+    ['Practicals', '/admin/practicals', ClipboardList, practicalList.length]
   ];
-  return <><PageHeading eyebrow="COLLEGE ADMINISTRATION" title="Administration overview" description="A clear view of configured academic structure and registered accounts." actions={<Link to="/admin/subjects" className="button button-secondary"><Plus size={16} />Add subject</Link>} /><div className="stat-grid admin-stat-grid"><Stat label="Departments" value={departments.length} note="Configured records" icon={Building2} /><Stat label="Teachers" value={teachers.length} note="Registered accounts" icon={Users} tone="green" /><Stat label="Students" value={students.length} note="Registered accounts" icon={GraduationCap} tone="blue" /><Stat label="Subjects" value={subjects.length} note="Configured records" icon={BookOpen} tone="amber" /><Stat label="Practicals" value={practicalList.length} note="Configured records" icon={ClipboardList} tone="slate" /></div><div className="admin-dashboard-columns"><section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>Latest updates</h2></div></div><EmptyState title="No recent activity" text="Activity will appear here when records are added or updated." icon={Activity} /></section><section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">ACADEMIC STRUCTURE</p><h2>Quick access</h2></div></div>{quickAccess.map(([label, to, Icon, count]) => <Link className="quick-row" to={to} key={to}><span><Icon size={17} /></span><strong>{label}</strong><small>{count} records</small><ChevronRight size={16} /></Link>)}</section></div></>;
+  return <>
+    <PageHeading eyebrow="COLLEGE ADMINISTRATION" title="Administration overview" description="A live view of academic structure, accounts, and practical content." actions={<Link to="/admin/subjects" className="button button-secondary"><Plus size={16} />Add subject</Link>} />
+    <div className="stat-grid admin-stat-grid">
+      <Stat label="Departments" value={departments.length} note="Configured records" icon={Building2} />
+      <Stat label="Academic years" value={years.length} note="Configured records" icon={GraduationCap} tone="green" />
+      <Stat label="Semesters" value={semesters.length} note="Configured records" icon={Activity} tone="blue" />
+      <Stat label="Teachers" value={teachers.length} note="Registered accounts" icon={Users} tone="green" />
+      <Stat label="Students" value={students.length} note="Registered accounts" icon={GraduationCap} tone="blue" />
+      <Stat label="Subjects" value={subjects.length} note="Configured records" icon={BookOpen} tone="amber" />
+      <Stat label="Practicals" value={practicalList.length} note="Configured records" icon={ClipboardList} tone="slate" />
+    </div>
+    <div className="admin-dashboard-columns">
+      <section className="surface dashboard-panel">
+        <div className="panel-heading"><div><p className="eyebrow">TEACHER UPDATES</p><h2>Recent activity</h2></div><Link className="text-link" to="/admin/notifications">View all <ArrowRight size={15} /></Link></div>
+        {adminNotifications.length ? <div className="admin-recent-list">{adminNotifications.slice(0, 5).map((item) => <div className={`admin-recent-row ${item.read ? '' : 'admin-recent-unread'}`} key={item._id}><span className="admin-recent-icon"><Activity size={17} /></span><span className="admin-recent-copy"><strong>{item.message}</strong><small>{item.actorId?.name || 'Teacher'} · {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recently'}</small></span></div>)}</div> : <EmptyState title="No teacher activity yet" text="Subject assignments, new subjects and practical updates from teachers will appear here." icon={Activity} />}
+      </section>
+      <section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">ACADEMIC STRUCTURE</p><h2>Quick access</h2></div></div>{quickAccess.map(([label, to, Icon, count]) => <Link className="quick-row" to={to} key={to}><span><Icon size={17} /></span><strong>{label}</strong><small>{count} records</small><ChevronRight size={16} /></Link>)}</section>
+    </div>
+    {latestPracticals.length > 0 && <section className="surface dashboard-panel admin-latest-practicals"><div className="panel-heading"><div><p className="eyebrow">CONTENT MANAGEMENT</p><h2>Latest practicals</h2></div><Link className="text-link" to="/admin/practicals">View all <ArrowRight size={15} /></Link></div><div className="admin-recent-list">{latestPracticals.map((item) => <Link className="admin-recent-row" key={item._id || item.id} to="/admin/practicals"><span className="admin-recent-icon"><ClipboardList size={17} /></span><span className="admin-recent-copy"><strong>{item.title || 'Untitled practical'}</strong><small>{item.subjectId?.name || 'Subject not assigned'} · Practical {number(item.practicalNumber || 1)}</small></span><Status>{item.status === 'published' || item.published ? 'Published' : 'Draft'}</Status></Link>)}</div></section>}
+  </>;
 }
 
 function AdminManagement({ page, notify, practicalList }) {
@@ -645,8 +682,8 @@ function AdminManagement({ page, notify, practicalList }) {
     years: { title: 'Academic years', eyebrow: 'ACADEMIC STRUCTURE', description: 'Configure year groups used for student and subject assignments.', columns: ['Year', 'Code', 'Status', 'Order'] },
     semesters: { title: 'Semesters', eyebrow: 'ACADEMIC STRUCTURE', description: 'Manage semester names across academic years.', columns: ['Semester', 'Code', 'Year', 'Status'] },
     subjects: { title: 'Subjects', eyebrow: 'CURRICULUM', description: 'Subjects are assigned by department, year and semester.', columns: ['Subject', 'Code', 'Department', 'Year', 'Semester', 'Status'] },
-    teachers: { title: 'Teachers', eyebrow: 'PEOPLE', description: 'Review registered faculty accounts and their assignments.', columns: ['Teacher', 'Employee ID', 'Department', 'Assigned subjects', 'Status'] },
-    students: { title: 'Students', eyebrow: 'PEOPLE', description: 'Student academic mappings determine which subjects they can access.', columns: ['Student', 'Roll number', 'Department', 'Year', 'Semester', 'Status'] },
+    teachers: { title: 'Teachers', eyebrow: 'PEOPLE', description: 'Review registered faculty accounts and their assignments.', columns: ['Teacher', 'Email', 'Employee ID', 'Department', 'Assigned subjects', 'Status'] },
+    students: { title: 'Students', eyebrow: 'PEOPLE', description: 'Student academic mappings determine which subjects they can access.', columns: ['Student', 'Email', 'Roll number', 'Department', 'Year', 'Semester', 'Status'] },
     practicals: { title: 'Practicals', eyebrow: 'CONTENT MANAGEMENT', description: 'Published and draft practicals across configured subjects.', columns: ['Practical', 'Subject', 'Number', 'Status', 'Updated'] }
   };
   const data = metadata[page];
@@ -667,7 +704,7 @@ function AdminManagement({ page, notify, practicalList }) {
     const loaders = { departments: departmentService.getAll, years: yearService.getAll, semesters: semesterService.getAll, subjects: subjectService.getAll };
     const response = loaders[page] ? await loaders[page]() : await api.get(`/admin/${page}`);
     const items = response?.data?.[page] || [];
-    setRecords(page === 'years' ? getAcademicYearOptions(items) : items);
+    setRecords(items);
   };
 
   useEffect(() => {
@@ -681,10 +718,10 @@ function AdminManagement({ page, notify, practicalList }) {
           ]);
           if (!active) return;
           const items = recordsResponse?.data?.[page] || [];
-          setRecords(page === 'years' ? getAcademicYearOptions(items) : items);
+          setRecords(items);
           setCatalog({
             departments: departmentResponse?.data?.departments || [],
-            years: getAcademicYearOptions(yearResponse?.data?.years || []),
+            years: yearResponse?.data?.years || [],
             semesters: semesterResponse?.data?.semesters || []
           });
         } else {
@@ -705,9 +742,9 @@ function AdminManagement({ page, notify, practicalList }) {
     : page === 'years' ? records.map((item) => [item.name, item.code || '—', item.status || 'active', item.order ?? '—'])
       : page === 'semesters' ? records.map((item) => [item.name, item.code || '—', referenceName(item.yearId), item.status || 'active'])
         : page === 'subjects' ? records.map((item) => [item.name, item.subjectCode || '—', referenceName(item.departmentId), referenceName(item.yearId), referenceName(item.semesterId), item.status || 'active'])
-          : page === 'teachers' ? records.map((teacher) => [teacher.name, teacher.employeeId || '—', referenceName(teacher.departmentId), (teacher.assignedSubjects || []).map(referenceName).join(', ') || 'Not assigned', teacher.status || '—'])
-            : page === 'students' ? records.map((student) => [student.name, student.studentId || '—', referenceName(student.departmentId), referenceName(student.yearId), referenceName(student.semesterId), student.status || '—'])
-              : records.slice(0, 8).map((item) => [item.title, referenceName(item.subjectId), `Practical ${number(item.practicalNumber)}`, item.status === 'published' ? 'Published' : 'Draft', item.updatedAt || '—']);
+          : page === 'teachers' ? records.map((teacher) => [teacher.name, teacher.email || '—', teacher.employeeId || '—', referenceName(teacher.departmentId), (teacher.assignedSubjects || []).map(referenceName).join(', ') || 'Not assigned', teacher.status || '—'])
+            : page === 'students' ? records.map((student) => [student.name, student.email || '—', student.studentId || '—', referenceName(student.departmentId), referenceName(student.yearId), referenceName(student.semesterId), student.status || '—'])
+              : records.map((item) => [item.title, referenceName(item.subjectId), `Practical ${number(item.practicalNumber)}`, item.status === 'published' ? 'Published' : 'Draft', item.updatedAt || '—']);
   const filtered = rows.map((row, index) => ({ row, record: records[index] }))
     .filter(({ row }) => row.join(' ').toLowerCase().includes(query.toLowerCase()));
   const typeTitle = { departments: 'Department', years: 'Year', semesters: 'Semester', subjects: 'Subject' }[page];
@@ -742,10 +779,10 @@ function AdminManagement({ page, notify, practicalList }) {
       } else {
         await (editing ? services[page].update(editing._id, payload) : services[page].create(payload));
       }
-    } catch {
-      setFormError(page === 'semesters'
+    } catch (error) {
+      setFormError(error.message || (page === 'semesters'
         ? `Unable to ${editing ? 'update' : 'add'} semester. Please try again.`
-        : `Unable to ${editing ? 'update' : 'add'} ${typeTitle.toLowerCase()}. Please try again.`);
+        : `Unable to ${editing ? 'update' : 'add'} ${typeTitle.toLowerCase()}. Please try again.`));
       setSaving(false);
       return;
     }
@@ -768,7 +805,7 @@ function AdminManagement({ page, notify, practicalList }) {
       setDeletingRecord(null);
       await loadRecords();
       notify(page === 'semesters' ? 'Semester deleted successfully.' : `${deletingRecord.name} deleted successfully.`);
-    } catch { setDeleteError('Unable to delete this record. Please try again.'); }
+    } catch (error) { setDeleteError(error.message || 'Unable to delete this record. Please try again.'); }
     finally { setDeleting(false); }
   };
   const editable = ['departments', 'years', 'semesters', 'subjects'].includes(page);
@@ -776,19 +813,19 @@ function AdminManagement({ page, notify, practicalList }) {
   return <>
     <PageHeading eyebrow={data.eyebrow} title={data.title} description={data.description} actions={editable && <Button icon={Plus} onClick={openCreate}>{actionLabel}</Button>} />
     <div className="table-toolbar"><label className="field-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${data.title.toLowerCase()}`} /></label><span className="muted-inline">{filtered.length} records</span></div>
-    <div className="surface data-table-wrap"><table className="data-table"><thead><tr>{data.columns.map((column) => <th key={column}>{column}</th>)}<th>Actions</th></tr></thead><tbody>{filtered.map(({ row, record }, index) => <tr key={`${row[0]}-${index}`}>{row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`}>{cell === 'Active' || cell === 'inactive' || cell === 'Published' || cell === 'Draft' ? <Status>{cell}</Status> : cell}</td>)}<td><div className="table-actions">{editable && <><button className="icon-button" title="Edit record" onClick={() => openEdit(record)}><Pencil size={15} /></button><button className="icon-button danger-action" title="Delete record" onClick={() => removeRecord(record)}><X size={15} /></button></>}</div></td></tr>)}</tbody></table>{!filtered.length && <EmptyState title="No matching records" text={query ? 'Try another search term.' : 'Add a record to begin building your academic structure.'} />}</div>
-    {formOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setFormOpen(false); }}><section role="dialog" aria-modal="true" aria-labelledby="academic-modal-title" className="w-full max-w-xl max-h-[calc(100vh-2rem)] overflow-y-auto rounded-lg border border-slate-200 bg-white p-5 shadow-xl sm:p-6"><div className="mb-5 flex items-start justify-between gap-4"><div><p className="eyebrow">{editing ? 'EDIT ACADEMIC RECORD' : 'ACADEMIC STRUCTURE'}</p><h2 id="academic-modal-title" className="text-xl font-bold text-slate-800">{editing ? `Edit ${typeTitle}` : actionLabel}</h2></div><button className="icon-button" type="button" aria-label="Close form" disabled={saving} onClick={() => setFormOpen(false)}><X size={17} /></button></div><form noValidate onSubmit={saveRecord} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <label className="form-field sm:col-span-2"><span>{typeTitle} Name</span><input autoFocus value={fields.name} onChange={updateField('name')} placeholder={page === 'semesters' ? 'Enter semester name' : `Enter ${typeTitle.toLowerCase()} name`} /></label>
+    <div className="surface data-table-wrap"><table className="data-table"><thead><tr>{data.columns.map((column) => <th key={column}>{column}</th>)}<th>Actions</th></tr></thead><tbody>{filtered.map(({ row, record }, index) => <tr key={`${row[0]}-${index}`}>{row.map((cell, cellIndex) => <td key={`${cell}-${cellIndex}`}>{['active', 'inactive', 'Active', 'Published', 'Draft'].includes(String(cell)) ? <Status>{cell}</Status> : cell}</td>)}<td><div className="table-actions">{editable && <><button className="icon-button" title="Edit record" onClick={() => openEdit(record)}><Pencil size={15} /></button><button className="icon-button danger-action" title="Delete record" onClick={() => removeRecord(record)}><X size={15} /></button></>}</div></td></tr>)}</tbody></table>{!filtered.length && <EmptyState title="No matching records" text={query ? 'Try another search term.' : 'Add a record to begin building your academic structure.'} />}</div>
+    {formOpen && <div className="admin-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setFormOpen(false); }}><section role="dialog" aria-modal="true" aria-labelledby="academic-modal-title" className="admin-modal"><div className="admin-modal-header"><div><p className="eyebrow">{editing ? 'EDIT ACADEMIC RECORD' : 'ACADEMIC STRUCTURE'}</p><h2 id="academic-modal-title">{editing ? `Edit ${typeTitle}` : actionLabel}</h2></div><button className="icon-button" type="button" aria-label="Close form" disabled={saving} onClick={() => setFormOpen(false)}><X size={17} /></button></div><form noValidate onSubmit={saveRecord} className="admin-modal-form">
+      <label className="form-field admin-modal-field-wide"><span>{typeTitle} Name</span><input autoFocus value={fields.name} onChange={updateField('name')} placeholder={page === 'semesters' ? 'Enter semester name' : `Enter ${typeTitle.toLowerCase()} name`} /></label>
       {page !== 'years' && <label className="form-field"><span>{page === 'departments' ? 'Department Code' : page === 'semesters' ? 'Semester Code' : 'Subject Code'}</span><input value={fields.code} onChange={updateField('code')} placeholder={page === 'semesters' ? 'Optional (e.g. SEM5)' : 'Optional'} /></label>}
-      {page === 'departments' && <label className="form-field sm:col-span-2"><span>Description</span><textarea rows="3" value={fields.description} onChange={updateField('description')} placeholder="Optional description" /></label>}
+      {page === 'departments' && <label className="form-field admin-modal-field-wide"><span>Description</span><textarea rows="3" value={fields.description} onChange={updateField('description')} placeholder="Optional description" /></label>}
       {page === 'years' && <label className="form-field"><span>Order</span><input type="number" min="1" value={fields.order} onChange={updateField('order')} /></label>}
-      {page === 'semesters' && <><label className="form-field"><span>Semester Number</span><select value={fields.number} onChange={updateField('number')}>{Array.from({ length: 8 }, (_, index) => String(index + 1)).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label className="form-field sm:col-span-2"><span>Academic Year</span><select value={fields.yearId} onChange={updateField('yearId')}><option value="">Select a year</option>{catalog.years.map((year) => <option key={year._id} value={year._id}>{year.name}</option>)}</select></label></>}
-      {page === 'subjects' && <><label className="form-field sm:col-span-2"><span>Description</span><textarea rows="2" value={fields.description} onChange={updateField('description')} placeholder="Optional description" /></label><label className="form-field"><span>Department</span><select value={fields.departmentId} onChange={updateField('departmentId')}><option value="">Select a department</option>{catalog.departments.map((department) => <option key={department._id} value={department._id}>{department.name}</option>)}</select></label><label className="form-field"><span>Year</span><select value={fields.yearId} onChange={(event) => setFields((current) => ({ ...current, yearId: event.target.value, semesterId: '' }))}><option value="">Select a year</option>{catalog.years.map((year) => <option key={year._id} value={year._id}>{year.name}</option>)}</select></label><label className="form-field sm:col-span-2"><span>Semester</span><select value={fields.semesterId} onChange={updateField('semesterId')}><option value="">Select a semester</option>{catalog.semesters.filter((semester) => !fields.yearId || String(semester.yearId?._id || semester.yearId) === String(fields.yearId)).map((semester) => <option key={semester._id} value={semester._id}>{semester.name}</option>)}</select></label></>}
+      {page === 'semesters' && <><label className="form-field"><span>Semester Number</span><select value={fields.number} onChange={updateField('number')}>{Array.from({ length: 8 }, (_, index) => String(index + 1)).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label className="form-field admin-modal-field-wide"><span>Academic Year</span><select value={fields.yearId} onChange={updateField('yearId')}><option value="">Select a year</option>{catalog.years.map((year) => <option key={year._id} value={year._id}>{year.name}</option>)}</select></label></>}
+      {page === 'subjects' && <><label className="form-field admin-modal-field-wide"><span>Description</span><textarea rows="2" value={fields.description} onChange={updateField('description')} placeholder="Optional description" /></label><label className="form-field"><span>Department</span><select value={fields.departmentId} onChange={updateField('departmentId')}><option value="">Select a department</option>{catalog.departments.map((department) => <option key={department._id} value={department._id}>{department.name}</option>)}</select></label><label className="form-field"><span>Year</span><select value={fields.yearId} onChange={(event) => setFields((current) => ({ ...current, yearId: event.target.value, semesterId: '' }))}><option value="">Select a year</option>{catalog.years.map((year) => <option key={year._id} value={year._id}>{year.name}</option>)}</select></label><label className="form-field admin-modal-field-wide"><span>Semester</span><select value={fields.semesterId} onChange={updateField('semesterId')}><option value="">Select a semester</option>{catalog.semesters.filter((semester) => !fields.yearId || String(semester.yearId?._id || semester.yearId) === String(fields.yearId)).map((semester) => <option key={semester._id} value={semester._id}>{semester.name}</option>)}</select></label></>}
       <label className="form-field"><span>Status</span><select value={fields.status} onChange={updateField('status')}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
-      {formError && <p className="sm:col-span-2 text-sm text-red-700" role="alert">{formError}</p>}
-      <div className="sm:col-span-2 flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" className="button button-secondary" disabled={saving} onClick={() => setFormOpen(false)}>Cancel</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? page === 'semesters' ? editing ? 'Updating...' : 'Adding...' : 'Saving...' : page === 'semesters' ? editing ? 'Update Semester' : 'Add Semester' : editing ? 'Save changes' : actionLabel}</button></div>
+      {formError && <p className="admin-modal-error" role="alert">{formError}</p>}
+      <div className="admin-modal-actions"><button type="button" className="button button-secondary" disabled={saving} onClick={() => setFormOpen(false)}>Cancel</button><button type="submit" className="button button-primary" disabled={saving}>{saving ? page === 'semesters' ? editing ? 'Updating...' : 'Adding...' : 'Saving...' : page === 'semesters' ? editing ? 'Update Semester' : 'Add Semester' : editing ? 'Save changes' : actionLabel}</button></div>
     </form></section></div>}
-    {deletingRecord && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleting) setDeletingRecord(null); }}><section role="alertdialog" aria-modal="true" aria-labelledby="delete-modal-title" className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl"><div className="mb-5 flex items-start justify-between gap-4"><div><p className="eyebrow">CONFIRM DELETE</p><h2 id="delete-modal-title" className="text-xl font-bold text-slate-800">{page === 'semesters' ? 'Delete Semester?' : `Delete ${typeTitle}?`}</h2></div><button className="icon-button" type="button" aria-label="Close confirmation" disabled={deleting} onClick={() => setDeletingRecord(null)}><X size={17} /></button></div><p className="mb-5 text-sm text-slate-600">{page === 'semesters' ? 'Are you sure you want to delete this semester?' : `Are you sure you want to delete ${deletingRecord.name}?`}</p>{deleteError && <p className="mb-4 text-sm text-red-700" role="alert">{deleteError}</p>}<div className="flex justify-end gap-2 border-t border-slate-100 pt-4"><button type="button" className="button button-secondary" disabled={deleting} onClick={() => setDeletingRecord(null)}>Cancel</button><button type="button" className="button button-primary" disabled={deleting} onClick={confirmDelete}>{deleting ? 'Deleting...' : 'Delete'}</button></div></section></div>}
+    {deletingRecord && <div className="admin-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !deleting) setDeletingRecord(null); }}><section role="alertdialog" aria-modal="true" aria-labelledby="delete-modal-title" className="admin-modal admin-delete-modal"><div className="admin-modal-header"><div><p className="eyebrow">CONFIRM DELETE</p><h2 id="delete-modal-title">{page === 'semesters' ? 'Delete Semester?' : `Delete ${typeTitle}?`}</h2></div><button className="icon-button" type="button" aria-label="Close confirmation" disabled={deleting} onClick={() => setDeletingRecord(null)}><X size={17} /></button></div><p className="admin-delete-copy">{page === 'semesters' ? 'Are you sure you want to delete this semester?' : `Are you sure you want to delete ${deletingRecord.name}?`}</p>{deleteError && <p className="admin-modal-error" role="alert">{deleteError}</p>}<div className="admin-modal-actions"><button type="button" className="button button-secondary" disabled={deleting} onClick={() => setDeletingRecord(null)}>Cancel</button><button type="button" className="button button-primary" disabled={deleting} onClick={confirmDelete}>{deleting ? 'Deleting...' : 'Delete'}</button></div></section></div>}
   </>;
 }
 
@@ -797,6 +834,17 @@ function AdminSettings({ notify }) {
   const [general, setGeneral] = useState({ collegeName: '', academicYear: '', semesterStatus: '' });
   const update = (key) => (event) => setGeneral((current) => ({ ...current, [key]: event.target.value }));
   return <><PageHeading eyebrow="CONFIGURATION" title="Settings" description="Manage portal-wide preferences and account access." actions={<Button onClick={() => notify('Portal settings saved.')}>Save settings</Button>} /><div className="settings-grid"><section className="surface settings-panel"><div className="panel-heading"><div><p className="eyebrow">PORTAL PREFERENCES</p><h2>General</h2></div><Settings size={18} /></div><label className="form-field"><span>College name</span><input value={general.collegeName} onChange={update('collegeName')} placeholder="Enter college name" /></label><label className="form-field"><span>Academic year</span><input value={general.academicYear} onChange={update('academicYear')} placeholder="Enter academic year" /></label><label className="form-field"><span>Default semester status</span><select value={general.semesterStatus} onChange={update('semesterStatus')}><option value="">Choose status</option><option>In progress</option><option>Upcoming</option><option>Completed</option></select></label></section><section className="surface settings-panel"><div className="panel-heading"><div><p className="eyebrow">ACCESS & SERVICES</p><h2>Portal controls</h2></div><ShieldCheck size={18} /></div>{[['registrations', 'Student registration', 'Allow new student registrations'], ['notifications', 'Email notifications', 'Send updates for published practicals'], ['ai', 'AI PDF analysis', 'Enable the teacher analysis interface']].map(([key, title, description]) => <label className="setting-toggle" key={key}><span><strong>{title}</strong><small>{description}</small></span><input type="checkbox" checked={enabled[key]} onChange={() => setEnabled((value) => ({ ...value, [key]: !value[key] }))} /></label>)}</section></div></>;
+}
+
+function AdminNotificationsPage({ items, onMarkRead }) {
+  return <>
+    <PageHeading eyebrow="COLLEGE ACTIVITY" title="Teacher updates" description="Subject assignments and practical activity reported by teachers." />
+    {items.length ? items.map((item) => <article className={`surface notification-full ${item.read ? 'notification-read' : 'notification-unread'}`} key={item._id}>
+      <span className="notification-dot" />
+      <span className="notification-message"><strong>{item.message}</strong><small>{item.actorId?.name || 'Teacher'} · {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recently'}</small></span>
+      {!item.read && <button type="button" className="notification-read-action" onClick={() => onMarkRead(item)}>Mark read</button>}
+    </article>) : <EmptyState title="No teacher updates yet" text="New subjects, class assignments and practical changes made by teachers will appear here." icon={Bell} />}
+  </>;
 }
 
 export default function PortalExperience() {
@@ -821,6 +869,7 @@ export default function PortalExperience() {
   const [adminStudentList, setAdminStudentList] = useState([]);
   const [adminSubjectList, setAdminSubjectList] = useState([]);
   const [adminCatalog, setAdminCatalog] = useState({ departments: [], years: [], semesters: [] });
+  const [adminNotifications, setAdminNotifications] = useState([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); };
@@ -837,7 +886,11 @@ export default function PortalExperience() {
   };
 
   useEffect(() => {
-    if (!user || !token) return;
+    if (!user || !token) {
+      setDataLoading(false);
+      setDataError('Your session is no longer available. Please sign in again.');
+      return undefined;
+    }
     let isMounted = true;
 
     const loadAcademicData = async () => {
@@ -864,18 +917,19 @@ export default function PortalExperience() {
         }
 
         if (user.role === 'admin') {
-          const [practicals, teachers, students, subjects, departments, years, semesters] = await Promise.all([
+          const [practicals, teachers, students, subjects, departments, years, semesters, notificationResponse] = await Promise.all([
             api.get('/admin/practicals'), api.get('/admin/teachers'), api.get('/admin/students'), api.get('/admin/subjects'),
-            departmentService.getAll(), yearService.getAll(), semesterService.getAll()
+            departmentService.getAll(), yearService.getAll(), semesterService.getAll(), notificationService.getAll()
           ]);
           if (!isMounted) return;
           setPracticalList(practicals?.data?.practicals || []);
           setAdminTeacherList(teachers?.data?.teachers || []);
           setAdminStudentList(students?.data?.students || []);
           setAdminSubjectList(subjects?.data?.subjects || []);
+          setAdminNotifications(notificationResponse?.data?.notifications || []);
           setAdminCatalog({
             departments: departments?.data?.departments || [],
-            years: getAcademicYearOptions(years?.data?.years || []),
+            years: years?.data?.years || [],
             semesters: semesters?.data?.semesters || []
           });
         }
@@ -893,6 +947,30 @@ export default function PortalExperience() {
       isMounted = false;
     };
   }, [user, token]);
+
+  useEffect(() => {
+    if (user?.role !== 'admin' || !token) return undefined;
+    const refresh = async () => {
+      try {
+        const response = await notificationService.getAll();
+        setAdminNotifications(response?.data?.notifications || []);
+      } catch (error) {
+        setToast(error.message || 'Unable to refresh teacher updates.');
+      }
+    };
+    const interval = window.setInterval(refresh, 20000);
+    return () => window.clearInterval(interval);
+  }, [user?.role, token]);
+
+  const markNotificationRead = async (notification) => {
+    const id = String(notification._id || notification.id);
+    try {
+      await notificationService.markAsRead(id);
+      setAdminNotifications((items) => items.map((item) => (item._id || item.id) === id ? { ...item, read: true } : item));
+    } catch (error) {
+      notify(error.message || 'Unable to mark this update as read.');
+    }
+  };
 
   const toggleBookmark = async (id) => {
     const practicalId = String(id);
@@ -942,7 +1020,7 @@ export default function PortalExperience() {
   let page;
 
   if (dataLoading && !(role === 'student' && ['/myraa', '/profile'].includes(route))) {
-    page = <EmptyState title={role === 'student' ? 'Loading practicals...' : 'Loading workspace data...'} text="Fetching the latest records from the college database." icon={LoaderCircle} />;
+    page = <WorkspaceLoading title={role === 'student' ? 'Loading your courses' : 'Preparing your workspace'} description="Fetching the latest academic records and assignments." />;
   } else if (dataError && (role !== 'student' || !['/myraa', '/profile'].includes(route))) {
     page = <EmptyState title="Unable to load database records" text={dataError} action={<Button onClick={() => window.location.reload()}>Try again</Button>} icon={Activity} />;
   } else if (role === 'student') {
@@ -963,7 +1041,7 @@ export default function PortalExperience() {
     const teacherPracticals = teacherPracticalList;
     if (route.startsWith('/academic-documents')) page = <AcademicDocumentsPage role={role} notify={notify} />;
     else if (route === '/dashboard') page = <TeacherDashboard practicalList={teacherPracticals} user={user} subjectList={teacherSubjects} />;
-    else if (route === '/subjects') page = <TeacherSubjects user={user} subjectList={teacherSubjects} />;
+    else if (route === '/subjects') page = <TeacherSubjects subjectList={teacherSubjects} onAssigned={refreshTeacherData} notify={notify} />;
     else if (route === '/practicals') page = <TeacherPracticalList practicalList={teacherPracticals} subjectList={teacherSubjects} subjectIds={new Set(teacherSubjects.map((item) => String(item._id || item.id)))} onDelete={deletePractical} onTogglePublish={togglePublished} notify={notify} />;
     else if (route === '/practicals/add') page = <TeacherPracticalModal user={user} notify={notify} onSaved={refreshTeacherData} />;
     else if (route.endsWith('/edit')) { const item = teacherPracticals.find((practical) => String(practical._id || practical.id) === String(practicalMatch?.[1])); page = <TeacherPracticalModal practical={item} user={user} notify={notify} onSaved={refreshTeacherData} />; }
@@ -971,8 +1049,9 @@ export default function PortalExperience() {
     else if (route === '/students') page = <TeacherStudents studentList={teacherStudentList} />;
     else if (route === '/profile') page = <ProfilePage user={user} role={role} notify={notify} />;
   } else if (role === 'admin') {
-    if (route === '/dashboard') page = <AdminDashboard practicalList={practicalList} teacherList={adminTeacherList} studentList={adminStudentList} catalog={adminCatalog} subjectList={adminSubjectList} />;
+    if (route === '/dashboard') page = <AdminDashboard practicalList={practicalList} teacherList={adminTeacherList} studentList={adminStudentList} catalog={adminCatalog} subjectList={adminSubjectList} adminNotifications={adminNotifications} />;
     else if (['/departments', '/years', '/semesters', '/subjects', '/teachers', '/students', '/practicals'].includes(route)) page = <AdminManagement page={route.slice(1)} practicalList={practicalList} notify={notify} />;
+    else if (route === '/notifications') page = <AdminNotificationsPage items={adminNotifications} onMarkRead={markNotificationRead} />;
     else if (route === '/settings') page = <AdminSettings notify={notify} />;
     else if (route === '/profile') page = <ProfilePage user={user} role={role} notify={notify} />;
   }
@@ -980,5 +1059,5 @@ export default function PortalExperience() {
 
   const searchSubjects = role === 'student' ? studentSubjectList : role === 'teacher' ? teacherSubjectList : adminSubjectList;
   const searchPracticals = role === 'student' ? studentPracticalList : role === 'teacher' ? teacherPracticalList : practicalList;
-  return <DashboardShell role={role} user={user} search={search} setSearch={setSearch} notificationOpen={notificationOpen} setNotificationOpen={setNotificationOpen} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={logout} searchSubjects={searchSubjects} searchPracticals={searchPracticals}><div className="page-enter">{page}</div><div className={`toast ${toast ? 'toast-visible' : ''}`} role="status"><CheckCircle2 size={17} />{toast}</div></DashboardShell>;
+  return <DashboardShell role={role} user={user} search={search} setSearch={setSearch} notificationOpen={notificationOpen} setNotificationOpen={setNotificationOpen} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={logout} searchSubjects={searchSubjects} searchPracticals={searchPracticals} notificationItems={adminNotifications} onNotificationRead={markNotificationRead}><div className="page-enter">{page}</div><div className={`toast ${toast ? 'toast-visible' : ''}`} role="status"><CheckCircle2 size={17} />{toast}</div></DashboardShell>;
 }

@@ -3,6 +3,9 @@ import api from './api';
 const teacherService = {
   getDashboard: async () => api.get('/teacher/dashboard'),
   getSubjects: async () => api.get('/teacher/subjects'),
+  getAvailableSubjects: async () => api.get('/teacher/subjects/available'),
+  assignSubject: async (subjectId) => api.post('/teacher/subjects', { subjectId }),
+  createSubject: async (payload) => api.post('/teacher/subjects/create', payload),
   getPracticals: async () => api.get('/teacher/practicals'),
   createPractical: async (payload) => api.post('/practicals', payload),
   getPracticalById: async (id) => api.get(`/practicals/${id}`),

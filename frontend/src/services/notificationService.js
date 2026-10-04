@@ -1,10 +1,8 @@
-import { notifications } from '../data/portalData.js';
-import { createCollectionService } from './mockStore.js';
+import api from './api';
 
-const collection = createCollectionService({ key: 'portal-notifications', name: 'Notifications', initialValue: notifications });
 const notificationService = {
-  ...collection,
-  markAsRead: async (id) => collection.update(id, { unread: false, readAt: new Date().toISOString() })
+  getAll: async () => api.get('/notifications'),
+  markAsRead: async (id) => api.put(`/notifications/${id}/read`)
 };
 
 export default notificationService;

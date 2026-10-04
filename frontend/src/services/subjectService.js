@@ -1,6 +1,11 @@
-import { subjects } from '../data/portalData.js';
-import { createCollectionService } from './mockStore.js';
+import api from './api';
 
-const subjectService = createCollectionService({ key: 'portal-subjects', name: 'Subjects', initialValue: subjects });
+const subjectService = {
+  getAll: async () => api.get('/subjects'),
+  getById: async (id) => api.get(`/subjects/${id}`),
+  create: async (payload) => api.post('/subjects', payload),
+  update: async (id, payload) => api.put(`/subjects/${id}`, payload),
+  remove: async (id) => api.del(`/subjects/${id}`)
+};
 
 export default subjectService;
