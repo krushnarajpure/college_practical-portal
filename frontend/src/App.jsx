@@ -12,6 +12,7 @@ function App() {
       <Route path="/how-it-works" element={<PublicExperience />} />
       <Route path="/about" element={<PublicExperience />} />
       <Route path="/owner-profile" element={<PublicExperience />} />
+      <Route path="/owner-profile/admin-login" element={<PublicExperience />} />
       <Route path="/select-role" element={<PublicExperience />} />
       <Route path="/login" element={<PublicExperience />} />
       <Route path="/register" element={<PublicExperience />} />

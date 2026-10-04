@@ -17,8 +17,7 @@ const roleCopy = {
 };
 const loginRoleOptions = [
   { label: 'Student', value: 'student' },
-  { label: 'Teacher', value: 'teacher' },
-  { label: 'Administrator', value: 'admin' }
+  { label: 'Teacher', value: 'teacher' }
 ];
 const normalizeLoginRole = (value) => loginRoleOptions.find((option) => option.value === value || option.label === value)?.value || 'student';
 
@@ -37,20 +36,21 @@ function LandingPage() {
 }
 
 function OwnerProfilePage() {
-  return <div className="public-page"><PublicHeader /><main className="owner-profile-main"><Link to="/" className="auth-back"><ArrowRight size={14} />Back to home</Link><section className="owner-profile-card"><div className="owner-profile-photo-wrap"><img className="owner-profile-photo" src={krushnaPhoto} alt="Krushna Rajpure" /></div><div className="owner-profile-copy"><p className="eyebrow">COLLEGE PRACTICAL PORTAL</p><h1>Krushna Rajpure</h1><p className="owner-profile-role">Website Administrator</p><p className="owner-profile-description">Maintaining the College Practical Portal to help bring practical learning resources together in one organized place for the college community.</p><Link to="/login?role=admin" className="button button-primary">Administrator sign in <ArrowRight size={15} /></Link></div></section></main><footer className="public-footer owner-profile-footer"><div className="footer-meta"><span>© 2026 College Practical Portal</span><Link to="/">Back to the portal</Link></div></footer></div>;
+  return <div className="public-page"><PublicHeader /><main className="owner-profile-main"><Link to="/" className="auth-back"><ArrowRight size={14} />Back to home</Link><section className="owner-profile-card"><div className="owner-profile-photo-wrap"><img className="owner-profile-photo" src={krushnaPhoto} alt="Krushna Rajpure" /></div><div className="owner-profile-copy"><p className="eyebrow">COLLEGE PRACTICAL PORTAL</p><h1>Krushna Rajpure</h1><p className="owner-profile-role">Website Administrator</p><p className="owner-profile-description">Maintaining the College Practical Portal to help bring practical learning resources together in one organized place for the college community.</p><Link to="/owner-profile/admin-login" className="button button-primary">Administrator sign in <ArrowRight size={15} /></Link></div></section></main><footer className="public-footer owner-profile-footer"><div className="footer-meta"><span>© 2026 College Practical Portal</span><Link to="/">Back to the portal</Link></div></footer></div>;
 }
 
 function RoleSelection() {
   const [params] = useSearchParams();
   const suggested = params.get('role');
-  return <div className="auth-page"><PublicHeader /><main className="auth-main"><div className="auth-heading"><p className="eyebrow">GET STARTED</p><h1>Choose your workspace.</h1><p>Choose how you use the portal. You can sign in or create an account next.</p></div><div className="role-grid">{Object.entries(roleCopy).map(([role, [title, description, Icon]]) => <article key={role} className={`role-card ${suggested === role ? 'role-card-suggested' : ''}`}><span className="role-icon"><Icon size={21} /></span><h2>{title}</h2><p>{description}</p><Link to={`/register?role=${role}`} className="role-continue">Continue as {title.toLowerCase()} <ArrowRight size={15} /></Link><Link className="role-login" to={`/login?role=${role}`}>Already registered? Log in</Link></article>)}</div><p className="auth-footnote"><LockKeyhole size={14} />Administrator account creation is restricted to authorized college staff.</p></main></div>;
+  return <div className="auth-page"><PublicHeader /><main className="auth-main"><div className="auth-heading"><p className="eyebrow">GET STARTED</p><h1>Choose your workspace.</h1><p>Choose how you use the portal. You can sign in or create an account next.</p></div><div className="role-grid">{Object.entries(roleCopy).filter(([role]) => role !== 'admin').map(([role, [title, description, Icon]]) => <article key={role} className={`role-card ${suggested === role ? 'role-card-suggested' : ''}`}><span className="role-icon"><Icon size={21} /></span><h2>{title}</h2><p>{description}</p><Link to={`/register?role=${role}`} className="role-continue">Continue as {title.toLowerCase()} <ArrowRight size={15} /></Link><Link className="role-login" to={`/login?role=${role}`}>Already registered? Log in</Link></article>)}</div><p className="auth-footnote"><LockKeyhole size={14} />Administrator sign-in is available from the website administrator profile.</p></main></div>;
 }
 
 function AuthPage({ mode = 'login' }) {
   const { login, register } = useAuth();
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [role, setRole] = useState(() => normalizeLoginRole(params.get('role')));
+  const adminLoginMode = mode === 'admin-login';
+  const [role, setRole] = useState(() => adminLoginMode ? 'admin' : normalizeLoginRole(params.get('role')));
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -107,12 +107,12 @@ function AuthPage({ mode = 'login' }) {
           yearId: fields.yearId,
           semesterId: fields.semesterId
         })
-        : await login({ email: fields.email, password: fields.password, role: normalizeLoginRole(role) });
+        : await login({ email: fields.email, password: fields.password, role: adminLoginMode ? 'admin' : normalizeLoginRole(role) });
       navigate(roleDestinations[signedIn.role], { replace: true });
     } catch (submitError) { setError(submitError.message || 'We could not complete that request.'); }
     finally { setBusy(false); }
   };
-  return <div className="auth-page"><PublicHeader /><main className="auth-main auth-main-narrow"><div className="auth-panel"><Link to="/" className="auth-back"><ArrowRight size={14} />Back to home</Link><p className="eyebrow">{forgotMode ? 'ACCOUNT RECOVERY' : registerMode ? 'CREATE YOUR ACCOUNT' : 'WELCOME BACK'}</p><h1>{forgotMode ? 'Reset your password.' : registerMode ? 'Join your workspace.' : 'Sign in to continue.'}</h1><p className="auth-panel-copy">{forgotMode ? 'Enter your college email and we’ll guide you through the next step.' : registerMode ? 'Your academic assignment helps us show the right coursework.' : 'Choose your role and enter your college account details.'}</p>{!forgotMode && <div className="auth-role-switch" aria-label="Select account role">{['student', 'teacher', 'admin'].map((value) => <button type="button" key={value} className={role === value ? 'selected' : ''} onClick={() => setRole(value)}>{roleCopy[value][0]}</button>)}</div>}
+  return <div className="auth-page"><PublicHeader /><main className="auth-main auth-main-narrow"><div className="auth-panel"><Link to={adminLoginMode ? '/owner-profile' : '/'} className="auth-back"><ArrowRight size={14} />{adminLoginMode ? 'Back to profile' : 'Back to home'}</Link><p className="eyebrow">{adminLoginMode ? 'ADMINISTRATOR ACCESS' : forgotMode ? 'ACCOUNT RECOVERY' : registerMode ? 'CREATE YOUR ACCOUNT' : 'WELCOME BACK'}</p><h1>{adminLoginMode ? 'Administrator sign in.' : forgotMode ? 'Reset your password.' : registerMode ? 'Join your workspace.' : 'Sign in to continue.'}</h1><p className="auth-panel-copy">{adminLoginMode ? 'Sign in with your authorized administrator account.' : forgotMode ? 'Enter your college email and we’ll guide you through the next step.' : registerMode ? 'Your academic assignment helps us show the right coursework.' : 'Choose your role and enter your college account details.'}</p>{!forgotMode && !adminLoginMode && <div className="auth-role-switch" aria-label="Select account role">{(registerMode ? ['student', 'teacher', 'admin'] : ['student', 'teacher']).map((value) => <button type="button" key={value} className={role === value ? 'selected' : ''} onClick={() => setRole(value)}>{roleCopy[value][0]}</button>)}</div>}
     <form className="auth-form" onSubmit={submit}>
       {registerMode && <label className="form-field"><span>Full name</span><input required autoComplete="name" value={fields.fullName} onChange={update('fullName')} placeholder="Your name" /></label>}
       {registerMode && role === 'student' && <label className="form-field"><span>Student ID / Roll number</span><input required value={fields.studentId} onChange={update('studentId')} placeholder="Enter your college roll number" /></label>}
@@ -125,12 +125,13 @@ function AuthPage({ mode = 'login' }) {
       {mode === 'login' && <div className="remember-row"><label><input type="checkbox" defaultChecked />Remember me</label><Link to="/forgot-password">Forgot password?</Link></div>}
       {error && <p className="form-alert form-alert-error" role="alert">{error}</p>}{message && <p className="form-alert form-alert-success" role="status">{message}</p>}
       <button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? 'Please wait...' : forgotMode ? 'Send reset instructions' : registerMode ? 'Create account' : 'Sign in'} <ArrowRight size={16} /></button>
-    </form>{!forgotMode && <p className="auth-switch">{registerMode ? 'Already have an account?' : 'New to the portal?'} <Link to={registerMode ? `/login?role=${role}` : `/register?role=${role}`}>{registerMode ? 'Sign in' : 'Create an account'}</Link></p>}{role === 'admin' && <p className="auth-footnote"><ShieldCheck size={14} />Admin accounts are provisioned by authorized college staff.</p>}</div></main><footer className="auth-footer">College Practical Portal <span>·</span> College community access</footer></div>;
+    </form>{!forgotMode && !adminLoginMode && <p className="auth-switch">{registerMode ? 'Already have an account?' : 'New to the portal?'} <Link to={registerMode ? `/login?role=${role}` : `/register?role=${role}`}>{registerMode ? 'Sign in' : 'Create an account'}</Link></p>}{(role === 'admin' || adminLoginMode) && <p className="auth-footnote"><ShieldCheck size={14} />Admin accounts are provisioned by authorized college staff.</p>}</div></main><footer className="auth-footer">College Practical Portal <span>·</span> College community access</footer></div>;
 }
 
 export default function PublicExperience({ mode }) {
   const location = useLocation();
   if (location.pathname === '/owner-profile') return <OwnerProfilePage />;
+  if (location.pathname === '/owner-profile/admin-login') return <AuthPage mode="admin-login" />;
   if (location.pathname === '/select-role') return <RoleSelection />;
   if (location.pathname === '/login') return <AuthPage mode="login" />;
   if (location.pathname === '/register') return <AuthPage mode="register" />;
