@@ -6341,3 +6341,160 @@ body {
     min-height: 82px;
   }
 }
+
+.footer-owner-link {
+  width: fit-content;
+  min-width: 248px;
+  margin: 0 0 20px auto;
+  padding: 10px 14px 10px 10px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  color: var(--ink);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+
+.footer-owner-link:hover {
+  transform: translateY(-1px);
+  border-color: var(--blue);
+  box-shadow: 0 5px 16px rgba(25, 51, 68, .08);
+}
+
+.footer-owner-link:focus-visible {
+  outline: 3px solid #74b8cc;
+  outline-offset: 3px;
+}
+
+.footer-owner-link img {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  object-fit: cover;
+  object-position: center 26%;
+}
+
+.footer-owner-link span {
+  display: grid;
+  gap: 3px;
+}
+
+.footer-owner-link small {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: .09em;
+}
+
+.footer-owner-link strong {
+  color: var(--ink-strong);
+  font: 700 13px/1.3 'Manrope', sans-serif;
+}
+
+.footer-owner-link > svg {
+  margin-left: auto;
+  color: var(--blue);
+}
+
+.owner-profile-main {
+  width: min(100% - 48px, 1000px);
+  min-height: 62vh;
+  margin: 0 auto;
+  padding: 38px 0 64px;
+}
+
+.owner-profile-main > .auth-back {
+  margin-bottom: 20px;
+}
+
+.owner-profile-card {
+  display: grid;
+  grid-template-columns: minmax(220px, 320px) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(28px, 6vw, 72px);
+  padding: clamp(24px, 5vw, 56px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: 0 8px 28px rgba(25, 51, 68, .06);
+}
+
+.owner-profile-photo-wrap {
+  overflow: hidden;
+  aspect-ratio: 4 / 5;
+  border-radius: 9px;
+  background: var(--canvas);
+}
+
+.owner-profile-photo {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  object-position: center 24%;
+}
+
+.owner-profile-copy h1 {
+  margin: 0;
+  color: var(--ink-strong);
+  font: 800 clamp(28px, 4vw, 42px)/1.15 'Manrope', sans-serif;
+  letter-spacing: -.035em;
+}
+
+.owner-profile-role {
+  margin: 10px 0 0;
+  color: var(--blue);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.owner-profile-description {
+  max-width: 480px;
+  margin: 22px 0 26px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.owner-profile-footer .footer-meta {
+  min-height: 54px;
+}
+
+@media (max-width: 640px) {
+  .footer-owner-link {
+    width: 100%;
+    margin: 8px 0 17px;
+  }
+
+  .owner-profile-main {
+    width: min(100% - 32px, 520px);
+    min-height: auto;
+    padding: 25px 0 40px;
+  }
+
+  .owner-profile-card {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+    padding: 20px;
+  }
+
+  .owner-profile-photo-wrap {
+    width: min(100%, 260px);
+    justify-self: center;
+    aspect-ratio: 1 / 1;
+    border-radius: 50%;
+  }
+
+  .owner-profile-copy h1 {
+    font-size: 30px;
+  }
+
+  .owner-profile-description {
+    margin: 16px 0 21px;
+    font-size: 13px;
+  }
+}
