@@ -9,7 +9,9 @@ export function getAcademicYearLevel(year) {
 }
 
 export function getAcademicYearOptions(years = []) {
-  return years
-    .filter((year) => getAcademicYearLevel(year) !== null)
-    .sort((left, right) => getAcademicYearLevel(left) - getAcademicYearLevel(right));
+  return [...years].sort((left, right) => {
+    const leftLevel = getAcademicYearLevel(left) || Number(left.order) || Number.POSITIVE_INFINITY;
+    const rightLevel = getAcademicYearLevel(right) || Number(right.order) || Number.POSITIVE_INFINITY;
+    return leftLevel - rightLevel || String(left.name || '').localeCompare(String(right.name || ''));
+  });
 }

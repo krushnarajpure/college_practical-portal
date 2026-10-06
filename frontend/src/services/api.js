@@ -1,5 +1,19 @@
 const configuredApiBaseUrl = import.meta.env.VITE_API_URL;
-const API_BASE_URL = configuredApiBaseUrl || (import.meta.env.PROD ? '' : 'http://localhost:5000/api');
+const defaultApiBaseUrl = import.meta.env.PROD ? '' : 'http://localhost:5000/api';
+
+function normalizeApiBaseUrl(value) {
+  const baseUrl = value?.trim();
+  if (!baseUrl) return '';
+
+  const url = new URL(baseUrl);
+  const pathname = url.pathname.replace(/\/+$/, '');
+  url.pathname = /\/api$/i.test(pathname) ? pathname : `${pathname}/api`;
+  url.search = '';
+  url.hash = '';
+  return url.toString().replace(/\/+$/, '');
+}
+
+const API_BASE_URL = normalizeApiBaseUrl(configuredApiBaseUrl || defaultApiBaseUrl);
 const REQUEST_TIMEOUT_MS = 15000;
 
 function createRequestUrl(path) {

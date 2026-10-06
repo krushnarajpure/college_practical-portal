@@ -52,7 +52,7 @@ All routes require the existing bearer-token authentication. Upload, update, del
 
 ### Configuration and local test
 
-Backend environment variables: `MONGODB_URI`, `JWT_SECRET`, `GEMINI_API_KEY` (or existing `AI_API_KEY`), `MAX_ACADEMIC_DOCUMENT_SIZE_MB` (default `25`), `PDF_PAGE_RENDER_DPI` (150-600, default `300`), and `FRONTEND_URL` (the frontend origin, without `/api`). Set frontend `VITE_API_URL` to the API base including `/api`; locally use `http://localhost:5000/api`.
+Backend environment variables: `MONGODB_URI`, `JWT_SECRET`, `GEMINI_API_KEY` (or existing `AI_API_KEY`), `MAX_ACADEMIC_DOCUMENT_SIZE_MB` (default `25`), `PDF_PAGE_RENDER_DPI` (150-600, default `300`), and `FRONTEND_URL` (the frontend origin, without `/api`). Set frontend `VITE_API_URL` to the backend API base, preferably including `/api`; locally use `http://localhost:5000/api`. If the configured backend URL omits `/api`, the frontend appends it automatically.
 
 The backend adds `pdf-lib` and `pdfjs-dist` for PDF form editing/text extraction, `docx` for Word output, and `exceljs` for Excel output. These dependencies are declared in `backend/package.json` and install with the normal backend `npm install`.
 
@@ -64,7 +64,7 @@ The backend adds `pdf-lib` and `pdfjs-dist` for PDF form editing/text extraction
 
 ### Deployment and processing limits
 
-Deploy the backend as a separate Render Web Service with the existing MongoDB connection and `GEMINI_API_KEY`; GridFS stores bytes in the configured MongoDB database. Set Render `FRONTEND_URL` to the exact Vercel origin and Vercel `VITE_API_URL` to the backend origin including `/api`, then redeploy both services.
+Deploy the backend as a separate Render Web Service with the existing MongoDB connection and `GEMINI_API_KEY`; GridFS stores bytes in the configured MongoDB database. Set Render `FRONTEND_URL` to the exact Vercel origin and Vercel `VITE_API_URL` to the backend origin (preferably ending in `/api`), then redeploy both services.
 
 Myraa is also a separate persistent Render Web Service because Vercel's static frontend deployment cannot run Myraa's Express server or WebSocket endpoint. Use `myraa/Myraa-Voice-Assistant-main` as the Render root directory, `npm ci && npm run build` as the build command, `npm start` as the start command, and `/api/config` as the health check. Set `MYRAA_ALLOWED_ORIGINS` to the Vercel origin and set Vercel `VITE_MYRAA_API_PREFIX` to the Myraa Render origin without a trailing slash. Redeploy Vercel after adding that variable. The frontend uses `/live` on the same Myraa origin for WebSocket connections.
 

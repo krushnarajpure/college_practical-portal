@@ -8,7 +8,12 @@ const router = express.Router();
 
 router.get('/departments', async (_req, res, next) => {
   try {
-    const departments = await Department.find({ status: 'active' }).sort({ name: 1 });
+    const departments = await Department.find({
+      $and: [
+        { $or: [{ status: 'active' }, { status: { $exists: false } }] },
+        { isActive: { $ne: false } }
+      ]
+    }).sort({ name: 1 });
     return res.status(200).json(successResponse('Active departments retrieved.', { departments }));
   } catch (error) {
     next(error);
@@ -17,7 +22,12 @@ router.get('/departments', async (_req, res, next) => {
 
 router.get('/years', async (_req, res, next) => {
   try {
-    const years = await Year.find({ status: 'active', academicLevel: { $in: [1, 2, 3, 4] } }).sort({ academicLevel: 1 });
+    const years = await Year.find({
+      $and: [
+        { $or: [{ status: 'active' }, { status: { $exists: false } }] },
+        { isActive: { $ne: false } }
+      ]
+    }).sort({ academicLevel: 1, order: 1, name: 1 });
     return res.status(200).json(successResponse('Active years retrieved.', { years }));
   } catch (error) {
     next(error);
@@ -26,7 +36,12 @@ router.get('/years', async (_req, res, next) => {
 
 router.get('/semesters', async (_req, res, next) => {
   try {
-    const semesters = await Semester.find({ status: 'active' }).populate('yearId').sort({ number: 1, name: 1 });
+    const semesters = await Semester.find({
+      $and: [
+        { $or: [{ status: 'active' }, { status: { $exists: false } }] },
+        { isActive: { $ne: false } }
+      ]
+    }).populate('yearId').sort({ number: 1, name: 1 });
     return res.status(200).json(successResponse('Active semesters retrieved.', { semesters }));
   } catch (error) {
     next(error);

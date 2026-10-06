@@ -105,6 +105,9 @@ function AuthPage({ mode = 'login' }) {
   const [departments, setDepartments] = useState([]);
   const [years, setYears] = useState([]);
   const [semesters, setSemesters] = useState([]);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [optionsError, setOptionsError] = useState('');
+  const [optionsReload, setOptionsReload] = useState(0);
   const [fields, setFields] = useState({ fullName: '', studentId: '', employeeId: '', email: '', password: '', confirmPassword: '', departmentId: '', yearId: '', semesterId: '' });
   const update = (key) => (event) => setFields((current) => ({ ...current, [key]: event.target.value }));
   const updateYear = (event) => setFields((current) => ({ ...current, yearId: event.target.value, semesterId: '' }));
@@ -113,28 +116,51 @@ function AuthPage({ mode = 'login' }) {
   const forgotMode = mode === 'forgot';
 
   useEffect(() => {
+    let active = true;
     const fetchOptions = async () => {
+      setOptionsLoading(true);
+      setOptionsError('');
       try {
-        const [departmentData, yearData, semesterData] = await Promise.all([
+        const [departmentResult, yearResult, semesterResult] = await Promise.allSettled([
           api.get('/public/departments'),
           api.get('/public/years'),
           api.get('/public/semesters')
         ]);
 
-        setDepartments(departmentData?.data?.departments || []);
-        setYears(getAcademicYearOptions(yearData?.data?.years || []));
-        setSemesters(semesterData?.data?.semesters || []);
-      } catch {
-        setDepartments([]);
-        setYears([]);
-        setSemesters([]);
+        if (!active) return;
+        const failures = [];
+        if (departmentResult.status === 'fulfilled') {
+          setDepartments(departmentResult.value?.data?.departments || []);
+        } else {
+          setDepartments([]);
+          failures.push(`Departments: ${departmentResult.reason.message || 'unavailable'}`);
+        }
+        if (yearResult.status === 'fulfilled') {
+          setYears(getAcademicYearOptions(yearResult.value?.data?.years || []));
+        } else {
+          setYears([]);
+          failures.push(`Years: ${yearResult.reason.message || 'unavailable'}`);
+        }
+        if (semesterResult.status === 'fulfilled') {
+          setSemesters(semesterResult.value?.data?.semesters || []);
+        } else {
+          setSemesters([]);
+          failures.push(`Semesters: ${semesterResult.reason.message || 'unavailable'}`);
+        }
+        if (failures.length) setOptionsError(failures.join('. '));
+      } catch (loadError) {
+        if (!active) return;
+        setOptionsError(loadError.message || 'Could not load academic options from the server.');
+      } finally {
+        if (active) setOptionsLoading(false);
       }
     };
 
     if (registerMode) {
       fetchOptions();
     }
-  }, [registerMode]);
+    return () => { active = false; };
+  }, [registerMode, optionsReload]);
 
   const submit = async (event) => {
     event.preventDefault(); setError(''); setMessage('');
@@ -171,8 +197,8 @@ function AuthPage({ mode = 'login' }) {
       <label className="form-field"><span>{forgotMode ? 'College email' : 'Email / User ID'}</span><span className="input-with-icon"><Mail size={16} /><input type="email" required autoComplete="email" value={fields.email} onChange={update('email')} placeholder="name@college.edu" /></span></label>
       {!forgotMode && <label className="form-field"><span>Password</span><span className="input-with-icon"><LockKeyhole size={16} /><input type="password" required autoComplete={registerMode ? 'new-password' : 'current-password'} minLength={6} value={fields.password} onChange={update('password')} placeholder="At least 6 characters" /></span></label>}
       {registerMode && <label className="form-field"><span>Confirm password</span><input type="password" required autoComplete="new-password" value={fields.confirmPassword} onChange={update('confirmPassword')} placeholder="Re-enter your password" /></label>}
-      {registerMode && role === 'student' && <div className="academic-fields"><p className="eyebrow">ACADEMIC DETAILS</p><div className="form-grid"><label className="form-field"><span>Department <b>*</b></span><select required value={fields.departmentId} onChange={update('departmentId')}><option value="">Select Department</option>{departments.map((department) => <option key={department._id || department.id} value={department._id || department.id}>{department.name}</option>)}</select></label><label className="form-field"><span>Year <b>*</b></span><select required value={fields.yearId} onChange={updateYear}><option value="">Select Year</option>{years.map((year) => <option key={year._id || year.id} value={year._id || year.id}>{year.name}</option>)}</select></label><label className="form-field form-field-wide"><span>Semester <b>*</b></span><select required disabled={!fields.yearId} value={fields.semesterId} onChange={update('semesterId')}><option value="">{fields.yearId ? 'Select Semester' : 'Select a year first'}</option>{availableSemesters.map((semester) => <option key={semester._id || semester.id} value={semester._id || semester.id}>{semester.name}</option>)}</select></label></div></div>}
-      {registerMode && role === 'teacher' && <div className="academic-fields"><p className="eyebrow">TEACHING ASSIGNMENT</p><label className="form-field"><span>Department</span><select value={fields.departmentId} onChange={update('departmentId')}><option value="">Select Department</option>{departments.map((department) => <option key={department._id || department.id} value={department._id || department.id}>{department.name}</option>)}</select></label><p className="form-help">Subjects can be assigned after they are configured by an administrator.</p></div>}
+      {registerMode && role === 'student' && <div className="academic-fields"><p className="eyebrow">ACADEMIC DETAILS</p><div className="form-grid"><label className="form-field"><span>Department <b>*</b></span><select required disabled={optionsLoading || departments.length === 0} value={fields.departmentId} onChange={update('departmentId')}><option value="">{optionsLoading ? 'Loading departments...' : departments.length ? 'Select Department' : 'No departments available'}</option>{departments.map((department) => <option key={department._id || department.id} value={department._id || department.id}>{department.name}</option>)}</select></label><label className="form-field"><span>Year <b>*</b></span><select required disabled={optionsLoading || years.length === 0} value={fields.yearId} onChange={updateYear}><option value="">{optionsLoading ? 'Loading years...' : years.length ? 'Select Year' : 'No years available'}</option>{years.map((year) => <option key={year._id || year.id} value={year._id || year.id}>{year.name}</option>)}</select></label><label className="form-field form-field-wide"><span>Semester <b>*</b></span><select required disabled={optionsLoading || !fields.yearId || availableSemesters.length === 0} value={fields.semesterId} onChange={update('semesterId')}><option value="">{optionsLoading ? 'Loading semesters...' : !fields.yearId ? 'Select a year first' : availableSemesters.length ? 'Select Semester' : 'No semesters available for this year'}</option>{availableSemesters.map((semester) => <option key={semester._id || semester.id} value={semester._id || semester.id}>{semester.name}</option>)}</select></label></div>{optionsError ? <div className="academic-options-message academic-options-error" role="alert"><span>{optionsError}</span><button type="button" onClick={() => setOptionsReload((current) => current + 1)}>Retry</button></div> : !optionsLoading && !departments.length ? <p className="academic-options-message">No active departments are configured yet. Ask your college administrator to add one under Admin → Departments.</p> : !optionsLoading && !years.length ? <p className="academic-options-message academic-options-error">No academic years were returned by the server. Please retry or contact your administrator.</p> : null}</div>}
+      {registerMode && role === 'teacher' && <div className="academic-fields"><p className="eyebrow">TEACHING ASSIGNMENT</p><label className="form-field"><span>Department</span><select disabled={optionsLoading || departments.length === 0} value={fields.departmentId} onChange={update('departmentId')}><option value="">{optionsLoading ? 'Loading departments...' : departments.length ? 'Select Department' : 'No departments available'}</option>{departments.map((department) => <option key={department._id || department.id} value={department._id || department.id}>{department.name}</option>)}</select></label>{optionsError ? <div className="academic-options-message academic-options-error" role="alert"><span>{optionsError}</span><button type="button" onClick={() => setOptionsReload((current) => current + 1)}>Retry</button></div> : !optionsLoading && !departments.length ? <p className="academic-options-message">No active departments are configured yet. Ask your college administrator to add one under Admin → Departments.</p> : <p className="form-help">Subjects can be assigned after they are configured by an administrator.</p>}</div>}
       {mode === 'login' && <div className="remember-row"><label><input type="checkbox" defaultChecked />Remember me</label><Link to="/forgot-password">Forgot password?</Link></div>}
       {error && <p className="form-alert form-alert-error" role="alert">{error}</p>}{message && <p className="form-alert form-alert-success" role="status">{message}</p>}
       <button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? 'Please wait...' : forgotMode ? 'Send reset instructions' : registerMode ? 'Create account' : 'Sign in'} <ArrowRight size={16} /></button>
