@@ -27,6 +27,8 @@ slash, for example `https://your-myraa-service.onrender.com`, then redeploy. The
 WebSocket URL is derived as `wss://<same-host>/live`. Set `VITE_MYRAA_WS_URL`
 only if the service uses a different WebSocket host/path. The Vite development
 proxy continues to use local port 3001.
+For local development, Myraa accepts portal origins on ports 5173 and 5174
+(localhost and 127.0.0.1); Vite may select 5174 when 5173 is busy.
 
 Vercel does not start this Node/WebSocket service. If `VITE_MYRAA_API_PREFIX` is
 missing or Render returns `404` with `x-render-routing: no-server`, the Render

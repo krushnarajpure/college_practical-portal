@@ -18,6 +18,7 @@
     "exceljs": "^4.4.0",
     "express": "^4.21.1",
     "express-rate-limit": "^7.1.5",
+    "googleapis": "^183.0.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "mongodb": "^6.20.0",

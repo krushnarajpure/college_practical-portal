@@ -22,6 +22,7 @@ import aiRoutes from './routes/aiRoutes.js';
 import myraaRoutes from './routes/myraaRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
 import academicDocumentRoutes from './routes/academicDocumentRoutes.js';
+import notesRoutes from './routes/notesRoutes.js';
 import { notFoundHandler, errorMiddleware } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -86,6 +87,7 @@ app.use('/api/progress', progressRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/myraa', myraaRoutes);
+app.use('/api', notesRoutes);
 app.use('/api/academic-documents', academicDocumentRoutes);
 
 app.use(notFoundHandler);

@@ -19,6 +19,7 @@ const OUTPUT_SAMPLE_RATE = 24_000;
 const MIC_BUFFER_SIZE = 256; // 16 ms at 16 kHz for faster turn detection
 const MAX_WS_BACKLOG_BYTES = 96 * 1024;
 const BARGE_IN_RMS_THRESHOLD = 0.022;
+const BARGE_IN_CONFIRMATION_FRAMES = 3;
 const BARGE_IN_COOLDOWN_MS = 250;
 
 function floatTo16BitPCM(input: Float32Array): ArrayBuffer {
@@ -84,6 +85,7 @@ export class MyraaAudioSession {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private reconnectAttempt = 0;
   private lastBargeInAt = 0;
+  private bargeInVoiceFrames = 0;
   private streamEpoch = 0;
 
   private onStateChange: (state: LiveState) => void;
@@ -307,12 +309,17 @@ export class MyraaAudioSession {
     if (this.currentState === "speaking") {
       const level = rms(channelData);
       if (level >= BARGE_IN_RMS_THRESHOLD) {
+        this.bargeInVoiceFrames++;
+        if (this.bargeInVoiceFrames < BARGE_IN_CONFIRMATION_FRAMES) return;
         this.requestBargeIn();
+        if (this.currentState === "speaking") return;
       } else {
+        this.bargeInVoiceFrames = 0;
         // Mute outgoing mic chunks while model is speaking to prevent echo loop / feedback
         return;
       }
     }
+    this.bargeInVoiceFrames = 0;
 
     if (
       this.ws?.readyState !== WebSocket.OPEN ||

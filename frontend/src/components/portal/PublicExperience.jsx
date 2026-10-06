@@ -5,6 +5,7 @@ import {
   GraduationCap, Instagram, Linkedin, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, Users
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import ThemeToggle from '../common/ThemeToggle';
 import api from '../../services/api';
 import { getAcademicYearOptions } from '../../utils/academicYear';
 import krushnaPhoto from '../../../krushna.jpeg';
@@ -22,7 +23,7 @@ const loginRoleOptions = [
 const normalizeLoginRole = (value) => loginRoleOptions.find((option) => option.value === value || option.label === value)?.value || 'student';
 
 function PublicHeader() {
-  return <header className="public-header"><Link to="/" className="brand-lockup"><span className="brand-mark"><BookOpen size={19} /></span><span><strong>College Practical Portal</strong><small>ALL YOUR PRACTICALS. ONE PLACE.</small></span></Link><nav className="public-nav" aria-label="Main navigation"><Link to="/">Home</Link><a href="/#features">Features</a><a href="/#how-it-works">How it works</a><a href="/#about">About</a></nav><div className="public-actions"><Link to="/login" className="button button-quiet">Log in</Link><Link to="/select-role" className="button button-primary">Get started <ArrowRight size={15} /></Link></div></header>;
+  return <header className="public-header"><Link to="/" className="brand-lockup"><span className="brand-mark"><BookOpen size={19} /></span><span><strong>College Practical Portal</strong><small>ALL YOUR PRACTICALS. ONE PLACE.</small></span></Link><nav className="public-nav" aria-label="Main navigation"><Link to="/">Home</Link><a href="/#features">Features</a><a href="/#how-it-works">How it works</a><a href="/#about">About</a></nav><div className="public-actions"><ThemeToggle /><Link to="/login" className="button button-quiet">Log in</Link><Link to="/select-role" className="button button-primary">Get started <ArrowRight size={15} /></Link></div></header>;
 }
 
 function LandingPage() {

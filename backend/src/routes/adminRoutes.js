@@ -1,5 +1,5 @@
 import express from 'express';
-import { getAdminDashboard, getDepartments, createDepartment, updateDepartment, deleteDepartment, getTeachers, createTeacher, updateTeacher, deleteTeacher, getStudents, getSubjects, getPracticals } from '../controllers/adminController.js';
+import { getAdminDashboard, getDepartments, createDepartment, updateDepartment, deleteDepartment, getTeachers, createTeacher, updateTeacher, deleteTeacher, getStudents, getAdminStudentPhoto, getSubjects, getPracticals } from '../controllers/adminController.js';
 import { authenticateUser } from '../middleware/authMiddleware.js';
 import { requireRole } from '../middleware/roleMiddleware.js';
 
@@ -17,6 +17,7 @@ router.post('/teachers', createTeacher);
 router.put('/teachers/:id', updateTeacher);
 router.delete('/teachers/:id', deleteTeacher);
 router.get('/students', getStudents);
+router.get('/students/:studentId/photo', getAdminStudentPhoto);
 router.get('/subjects', getSubjects);
 router.get('/practicals', getPracticals);
 

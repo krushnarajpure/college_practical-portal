@@ -1,3 +1,5 @@
+import { logger } from '../utils/logger.js';
+
 export const notFoundHandler = (req, res) => {
   res.status(404).json({
     success: false,
@@ -8,18 +10,51 @@ export const notFoundHandler = (req, res) => {
 
 export const errorMiddleware = (error, req, res, next) => {
   if (res.headersSent) {
-    res.destroy(error);
+    if (error instanceof Error) res.destroy(error);
+    else res.destroy();
     return;
   }
 
-  const isMulterError = error.name === 'MulterError';
-  const isDatabaseUnavailable = ['MongoNotConnectedError', 'MongoServerSelectionError', 'MongooseServerSelectionError', 'MongoNetworkError', 'MongoTopologyClosedError'].includes(error.name);
-  const statusCode = error.statusCode || (isDatabaseUnavailable ? 503 : isMulterError && error.code === 'LIMIT_FILE_SIZE' ? 413 : isMulterError ? 400 : 500);
-  const message = isDatabaseUnavailable ? 'MongoDB/GridFS is temporarily unavailable.' : statusCode >= 500 && !error.statusCode ? 'The requested operation could not be completed.' : error.message || 'Internal server error.';
+  const errorName = typeof error?.name === 'string' ? error.name : 'ServerError';
+  const errorMessage = typeof error?.message === 'string' ? error.message : 'Internal server error.';
+  const isMulterError = errorName === 'MulterError';
+  const isDatabaseUnavailable = [
+    'MongoNotConnectedError',
+    'MongoServerSelectionError',
+    'MongooseServerSelectionError',
+    'MongoNetworkError',
+    'MongoTopologyClosedError'
+  ].includes(errorName);
+  const requestedStatusCode = Number(error?.statusCode || error?.status);
+  const hasValidStatusCode = Number.isInteger(requestedStatusCode) && requestedStatusCode >= 400 && requestedStatusCode <= 599;
+  const statusCode = hasValidStatusCode
+    ? requestedStatusCode
+    : isDatabaseUnavailable
+      ? 503
+      : isMulterError && error.code === 'LIMIT_FILE_SIZE'
+        ? 413
+        : isMulterError
+          ? 400
+          : 500;
+  const message = isDatabaseUnavailable
+    ? 'MongoDB/GridFS is temporarily unavailable.'
+    : statusCode >= 500
+      ? 'The requested operation could not be completed.'
+      : errorMessage;
+
+  if (statusCode >= 500) {
+    logger.error('Request failed', {
+      name: errorName,
+      statusCode,
+      method: req.method,
+      path: req.path,
+      message: errorMessage
+    });
+  }
 
   res.status(statusCode).json({
     success: false,
     message,
-    error: error.name || 'ServerError'
+    error: errorName
   });
 };

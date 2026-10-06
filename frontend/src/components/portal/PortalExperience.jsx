@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Activity, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, BookOpen, Bookmark,
+  Activity, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, BookOpen, Bookmark, Database, Eye, EyeOff, HardDrive,
   Building2, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
   Clock3, Download, FilePlus2, FileText, Filter, GraduationCap, LayoutDashboard,
-  LoaderCircle, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Settings, ShieldCheck,
-  Sparkles, Users, X
+  Notebook,  LoaderCircle, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Settings, ShieldCheck,
+  Folder, FolderOpen, Instagram, Maximize2, Minimize2, RefreshCw, Save, Sparkles, Trash2, Users, X
 } from 'lucide-react';
+import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useAuth } from '../../context/AuthContext';
 import { notifications } from '../../data/portalData';
 import api from '../../services/api';
@@ -24,11 +25,17 @@ import notificationService from '../../services/notificationService';
 import TeacherPracticalModal from './TeacherPracticalModal';
 import TeacherSubjectModal from './TeacherSubjectModal';
 import WorkspaceLoading from '../common/WorkspaceLoading';
+import ThemeToggle from '../common/ThemeToggle';
 import MyraaIntegrated from '../../features/myraa/MyraaIntegrated';
+import StudentPlanner from './StudentPlanner';
 
 const roleHome = { admin: '/admin/dashboard', teacher: '/teacher/dashboard', student: '/student/dashboard' };
 const roleNames = { admin: 'Administrator', teacher: 'Teacher', student: 'Student' };
 const number = (value) => String(value).padStart(2, '0');
+
+const getNoteFolderSegments = (note) => Array.isArray(note.folderPathSegments) && note.folderPathSegments.length
+  ? note.folderPathSegments
+  : String(note.folderPath || '').split('/').filter(Boolean);
 
 function Button({ children, variant = 'primary', icon: Icon, className = '', ...props }) {
   return <button className={`button button-${variant} ${className}`} {...props}>{Icon && <Icon size={16} strokeWidth={1.8} />}{children}</button>;
@@ -116,7 +123,7 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
     student: [
       ['Overview', '/student/dashboard', LayoutDashboard], ['My subjects', '/student/subjects', BookOpen],
       ['Practicals', '/student/practicals', ClipboardList], ['Bookmarks', '/student/bookmarks', Bookmark],
-      ['Academic Documents', '/student/academic-documents', FileText],
+      ['Notes', '/student/notes', Notebook], ['Academic Documents', '/student/academic-documents', FileText],
       ['Myraa assistant', '/student/myraa', Sparkles], ['Profile', '/student/profile', Users]
     ],
     teacher: [
@@ -129,7 +136,8 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
       ['Overview', '/admin/dashboard', LayoutDashboard], ['Departments', '/admin/departments', Building2],
       ['Years', '/admin/years', GraduationCap], ['Semesters', '/admin/semesters', Activity],
       ['Subjects', '/admin/subjects', BookOpen], ['Teachers', '/admin/teachers', Users],
-      ['Students', '/admin/students', Users], ['Practicals', '/admin/practicals', ClipboardList], ['Settings', '/admin/settings', Settings]
+      ['Students', '/admin/students', Users], ['Practicals', '/admin/practicals', ClipboardList],
+      ['Notes', '/admin/notes', Notebook], ['Settings', '/admin/settings', Settings]
     ]
   };
   const scope = role === 'student'
@@ -141,6 +149,11 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
   const unreadCount = roleNotifications.filter((item) => !item.read).length;
   const [profileOpen, setProfileOpen] = useState(false);
   const profilePhotoUrl = useProfilePhoto(user);
+  const normalizedSearch = search.trim().toLowerCase();
+  const searchResults = normalizedSearch ? [
+    ...searchSubjects.filter((item) => `${item.name || ''} ${item.subjectCode || item.code || ''}`.toLowerCase().includes(normalizedSearch)).slice(0, 4).map((item) => ({ label: item.name, to: role === 'student' ? `/student/subjects/${item._id || item.id}` : `/${role}/subjects` })),
+    ...searchPracticals.filter((item) => `${item.title || ''} ${item.practicalNumber || ''}`.toLowerCase().includes(normalizedSearch)).slice(0, 4).map((item) => ({ label: item.title, to: role === 'student' ? `/student/practicals/${item._id || item.id}` : `/${role}/practicals/${item._id || item.id}` }))
+  ] : [];
 
   return <div className="portal-layout">
     {mobileOpen && <button className="drawer-backdrop" aria-label="Close navigation" onClick={() => setMobileOpen(false)} />}
@@ -158,8 +171,9 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
         <button className="icon-button mobile-menu" onClick={() => setMobileOpen(true)} aria-label="Open navigation"><Menu size={19} /></button>
         <div className="topbar-crumb"><span>College Practical Portal</span><ChevronRight size={14} /><strong>{roleNames[role]} workspace</strong></div>
         <div className="topbar-actions">
-          <label className="global-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search subjects, practicals..." aria-label="Search subjects and practicals" />{search && <button onClick={() => setSearch('')} aria-label="Clear search"><X size={14} /></button>}<kbd>⌘ K</kbd></label>
-          {search && <div className="search-popover">{[...searchSubjects.filter((item) => item.name?.toLowerCase().includes(search.toLowerCase())).slice(0, 3).map((item) => ({ label: item.name, to: role === 'student' ? `/student/subjects/${item._id || item.id}` : `/${role}/subjects` })), ...searchPracticals.filter((item) => item.title?.toLowerCase().includes(search.toLowerCase())).slice(0, 3).map((item) => ({ label: item.title, to: role === 'student' ? `/student/practicals/${item._id || item.id}` : `/${role}/practicals/${item._id || item.id}` }))].map((result, index) => <Link key={`${result.label}-${index}`} to={result.to} onClick={() => setSearch('')}><Search size={14} />{result.label}<ArrowRight size={14} /></Link>)}{!searchSubjects.some((item) => item.name?.toLowerCase().includes(search.toLowerCase())) && !searchPracticals.some((item) => item.title?.toLowerCase().includes(search.toLowerCase())) && <span className="search-empty">No matching learning material</span>}</div>}
+          <label className="global-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search subjects, practicals..." aria-label="Search subjects and practicals" />{search && <button onClick={() => setSearch('')} aria-label="Clear search"><X size={14} /></button>}<kbd>Ctrl K</kbd></label>
+          {search && <div className="search-popover">{searchResults.map((result, index) => <Link key={`${result.label}-${index}`} to={result.to} onClick={() => setSearch('')}><Search size={14} />{result.label}<ArrowRight size={14} /></Link>)}{!searchResults.length && <span className="search-empty">No matching learning material</span>}</div>}
+          <ThemeToggle />
           <div className="topbar-menu-wrap"><button className={`icon-button notification-trigger ${notificationOpen ? 'is-active' : ''}`} onClick={() => setNotificationOpen(!notificationOpen)} aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}><Bell size={18} />{unreadCount > 0 && <i />}</button>{notificationOpen && <div className="notification-popover"><div className="popover-heading"><strong>Notifications</strong><button className="text-link" onClick={() => setNotificationOpen(false)}>Close</button></div>{roleNotifications.length ? roleNotifications.slice(0, 6).map((item) => <button type="button" className={`notification-item ${item.read ? 'notification-read' : ''}`} key={item._id || item.id} onClick={() => !item.read && onNotificationRead?.(item)}><span className="notification-dot" /><span><strong>{item.message || item.title}</strong><small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : item.time}</small></span></button>) : <p className="popover-empty">No notifications yet.</p>}<Link to={`/${role}/notifications`} className="popover-footer" onClick={() => setNotificationOpen(false)}>View all notifications <ArrowRight size={14} /></Link></div>}</div>
           <div className="topbar-menu-wrap"><button className="profile-trigger" onClick={() => setProfileOpen(!profileOpen)}><ProfileAvatar name={user?.name} photoUrl={profilePhotoUrl} size="sm" /><span className="profile-trigger-copy"><strong>{user?.name || roleNames[role]}</strong><small>{scope}</small></span><ChevronDown size={15} /></button>{profileOpen && <div className="profile-menu"><Link to={`/${role}/profile`} onClick={() => setProfileOpen(false)}>View profile</Link><button onClick={onLogout}>Sign out</button></div>}</div>
         </div>
@@ -203,14 +217,15 @@ function normalizePracticalFromApi(practical) {
   };
 }
 
-function StudentDashboard({ user, practicalList, bookmarkedIds, subjectList = [], completedIds = [] }) {
+function StudentDashboard({ user, practicalList, bookmarkedIds, subjectList = [], completedIds = [], progressRecords = [], notify }) {
   const navigate = useNavigate();
   const studentSubjects = subjectList.map(normalizeSubjectFromApi).filter(Boolean);
-  const studentPracticals = practicalList.map(normalizePracticalFromApi).filter(Boolean);
+  const studentPracticals = useMemo(() => practicalList.map(normalizePracticalFromApi).filter(Boolean), [practicalList]);
   const completed = studentPracticals.filter((item) => completedIds.includes(String(item.id))).length;
   return <>
     <PageHeading eyebrow="STUDENT WORKSPACE" title={`Good morning, ${user?.name?.split(' ')[0] || 'there'}`} description="Pick up where you left off in your practical work." />
     <div className="stat-grid"><Stat label="My subjects" value={studentSubjects.length} note="Current semester" icon={BookOpen} /><Stat label="Practicals" value={studentPracticals.length} note="Published for you" icon={ClipboardList} tone="green" /><Stat label="Completed" value={completed} note={`${studentPracticals.length - completed} to go`} icon={CheckCircle2} tone="amber" /><Stat label="Bookmarks" value={bookmarkedIds.length} note="Saved for later" icon={Bookmark} tone="slate" /></div>
+    <StudentPlanner user={user} practicalList={studentPracticals} progressRecords={progressRecords} completedIds={completedIds} notify={notify} />
     <div className="section-heading"><div><p className="eyebrow">YOUR CURRICULUM</p><h2>My subjects</h2></div><Link className="text-link" to="/student/subjects">View all subjects <ArrowRight size={15} /></Link></div>
     {studentSubjects.length ? <div className="subject-grid">{studentSubjects.slice(0, 3).map((subject) => { const items = studentPracticals.filter((item) => item.subjectId === subject.id); return <SubjectTile key={subject.id} subject={subject} items={items} completedCount={items.filter((item) => completedIds.includes(String(item.id))).length} />; })}</div> : <EmptyState title="No subjects assigned" text="No subjects are assigned to your department, year and semester yet." />}
     <div className="section-heading section-heading-spaced"><div><p className="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h2>Recently available</h2></div><Link className="text-link" to="/student/practicals">All practicals <ArrowRight size={15} /></Link></div>
@@ -256,10 +271,19 @@ function StudentPracticals({ practicalList, subjectList = [], completedIds = [] 
   const params = new URLSearchParams(useLocation().search);
   const [filter, setFilter] = useState('All');
   const [query, setQuery] = useState('');
+  const [subjectFilter, setSubjectFilter] = useState(params.get('subject') || 'All');
+  const [sort, setSort] = useState('sequence');
   const subjectPool = subjectList.map(normalizeSubjectFromApi).filter(Boolean);
   const items = (practicalList || []).map(normalizePracticalFromApi).filter((item) => item && (!params.get('subject') || String(item.subjectId) === String(params.get('subject'))));
-  const shown = items.filter((item) => (filter === 'All' || (filter === 'Completed' ? completedIds.includes(String(item.id)) : !completedIds.includes(String(item.id)))) && item.title.toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeading eyebrow="LEARNING MATERIAL" title="Practicals" description="Browse published practicals across your assigned subjects." /><div className="table-toolbar"><label className="field-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search practicals" /></label><div className="segmented-control" aria-label="Filter practicals">{['All', 'Completed', 'Pending'].map((value) => <button key={value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value}</button>)}</div></div><section className="surface practical-list">{shown.map((item) => <PracticalRow key={item.id} practical={item} subject={subjectPool.find((entry) => String(entry.id) === String(item.subjectId))} completed={completedIds.includes(String(item.id))} onOpen={(practical) => navigate(`/student/practicals/${practical.id}`)} />)}{!shown.length && <EmptyState title="No practicals found" text={query ? 'Try another search term or clear your filters.' : 'No practicals match this status yet.'} icon={Filter} />}</section></>;
+  const filteredItems = items.filter((item) => (
+    (filter === 'All' || (filter === 'Completed' ? completedIds.includes(String(item.id)) : !completedIds.includes(String(item.id))))
+    && (subjectFilter === 'All' || String(item.subjectId) === subjectFilter)
+    && `${item.title} ${item.practicalNumber}`.toLowerCase().includes(query.trim().toLowerCase())
+  ));
+  const shown = [...filteredItems].sort((first, second) => sort === 'title'
+    ? first.title.localeCompare(second.title)
+    : Number(first.practicalNumber) - Number(second.practicalNumber));
+  return <><PageHeading eyebrow="LEARNING MATERIAL" title="Practicals" description="Browse published practicals across your assigned subjects." /><div className="table-toolbar practical-toolbar"><label className="field-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search practicals" /></label><label className="practical-filter-select"><span className="sr-only">Filter by subject</span><select value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)}><option value="All">All subjects</option>{subjectPool.map((subject) => <option key={subject.id} value={String(subject.id)}>{subject.name}</option>)}</select></label><label className="practical-filter-select"><span className="sr-only">Sort practicals</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="sequence">Practical sequence</option><option value="title">Title A–Z</option></select></label><div className="segmented-control" aria-label="Filter practicals">{['All', 'Completed', 'Pending'].map((value) => <button key={value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value}</button>)}</div><span className="muted-inline practical-result-count">{shown.length} results</span></div><section className="surface practical-list">{shown.map((item) => <PracticalRow key={item.id} practical={item} subject={subjectPool.find((entry) => String(entry.id) === String(item.subjectId))} completed={completedIds.includes(String(item.id))} onOpen={(practical) => navigate(`/student/practicals/${practical.id}`)} />)}{!shown.length && <EmptyState title="No practicals found" text={query || subjectFilter !== 'All' ? 'Try another search term or clear your filters.' : 'No practicals match this status yet.'} icon={Filter} />}</section></>;
 }
 
 function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, completePractical, notify, subjectList = [], completedIds = [] }) {
@@ -349,6 +373,724 @@ function StudentBookmarks({ practicalList, bookmarkedIds, subjectList = [] }) {
   const items = (practicalList || []).map(normalizePracticalFromApi).filter((item) => item && bookmarkedIds.includes(item.id));
   const navigate = useNavigate();
   return <><PageHeading eyebrow="SAVED LEARNING MATERIAL" title="Bookmarks" description="A short list of practicals you want to return to." />{items.length ? <section className="surface practical-list">{items.map((item) => <PracticalRow key={item.id} practical={item} subject={subjectPool.find((entry) => String(entry.id) === String(item.subjectId))} onOpen={(practical) => navigate(`/student/practicals/${practical.id}`)} />)}</section> : <EmptyState title="No bookmarks yet" text="You haven't bookmarked any practical yet. Save a practical to find it here." icon={Bookmark} action={<Link to="/student/subjects" className="text-link">Browse my subjects <ArrowRight size={15} /></Link>} />}</>;
+}
+
+function NotesPage() {
+  const { user } = useAuth();
+  const userId = String(user?._id || user?.id || user?.email || 'student');
+  const viewStorageKey = `college_practical_notes_view:${userId}`;
+  const savedView = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem(viewStorageKey) || '{}');
+    } catch {
+      return {};
+    }
+  })();
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [syncWarning, setSyncWarning] = useState('');
+  const [search, setSearch] = useState(savedView.search || '');
+  const [category, setCategory] = useState(savedView.category || '');
+  const [sort, setSort] = useState(savedView.sort || 'newest');
+  const [openFolder, setOpenFolder] = useState(Array.isArray(savedView.openFolder) ? savedView.openFolder : []);
+  const [previewNote, setPreviewNote] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadNotes = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        setSyncWarning('');
+        const response = await api.get('/student/notes', undefined, 120000);
+        if (!active) return;
+        const uniqueNotes = new Map();
+        for (const note of Array.isArray(response?.data?.notes) ? response.data.notes : []) {
+          const id = String(note.id || note._id || note.driveFileId || '');
+          if (id && !uniqueNotes.has(id)) uniqueNotes.set(id, note);
+        }
+        setNotes([...uniqueNotes.values()]);
+        setSyncWarning(response?.data?.syncError || '');
+      } catch (loadError) {
+        if (!active) return;
+        setError(loadError.message || 'Unable to load notes.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadNotes();
+    return () => { active = false; };
+  }, [reloadKey]);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(viewStorageKey, JSON.stringify({ search, category, sort, openFolder }));
+    } catch {
+      return;
+    }
+  }, [category, openFolder, search, sort, viewStorageKey]);
+
+  const categories = [...new Set(notes.map((note) => note.category || 'General'))].sort((left, right) => left.localeCompare(right));
+  const rootFolderName = notes.length
+    ? getNoteFolderSegments(notes[0])[0] || 'Notes'
+    : 'Notes';
+  const rootPath = [rootFolderName];
+  const currentPath = openFolder.length && openFolder[0] === rootFolderName ? openFolder : rootPath;
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredNotes = notes
+    .filter((note) => !category || (note.category || 'General') === category)
+    .filter((note) => {
+      if (!normalizedSearch) return true;
+      return [note.title, note.category, note.folderPath, note.description, note.fileType, note.extension]
+        .some((value) => String(value || '').toLowerCase().includes(normalizedSearch));
+    })
+    .sort((left, right) => {
+      if (sort === 'oldest') return new Date(left.driveUpdatedAt || left.updatedAt) - new Date(right.driveUpdatedAt || right.updatedAt);
+      if (sort === 'title-asc') return String(left.title || '').localeCompare(String(right.title || ''));
+      if (sort === 'title-desc') return String(right.title || '').localeCompare(String(left.title || ''));
+      if (sort === 'largest') return Number(right.size || 0) - Number(left.size || 0);
+      return new Date(right.driveUpdatedAt || right.updatedAt) - new Date(left.driveUpdatedAt || left.updatedAt);
+    });
+  const currentPathKey = JSON.stringify(currentPath);
+  const visibleFoldersByPath = new Map();
+  const visibleNotes = normalizedSearch
+    ? filteredNotes
+    : filteredNotes.filter((note) => JSON.stringify(getNoteFolderSegments(note)) === currentPathKey);
+
+  if (!normalizedSearch) {
+    for (const note of filteredNotes) {
+      const segments = getNoteFolderSegments(note);
+      for (let depth = rootPath.length; depth < segments.length; depth += 1) {
+        if (JSON.stringify(segments.slice(0, depth)) !== currentPathKey) continue;
+        const name = segments[depth];
+        const childKey = JSON.stringify(segments.slice(0, depth + 1));
+        const folder = visibleFoldersByPath.get(childKey) || { name, path: segments.slice(0, depth + 1), count: 0 };
+        folder.count += 1;
+        visibleFoldersByPath.set(childKey, folder);
+      }
+    }
+  }
+  const visibleFolders = [...visibleFoldersByPath.values()].sort((left, right) => left.name.localeCompare(right.name));
+  const totalVisibleItems = visibleFolders.length + visibleNotes.length;
+
+  if (loading) {
+    return <EmptyState title="Loading notes..." text="Fetching the latest study notes shared with students." icon={Notebook} />;
+  }
+
+  if (error) {
+    return <EmptyState title="Unable to load notes" text={error} icon={Notebook} action={<Button onClick={() => setReloadKey((key) => key + 1)}>Try again</Button>} />;
+  }
+
+  return <>
+    <PageHeading eyebrow="STUDY RESOURCES" title="Notes" description="Open the notes shared for your classes directly inside the portal." />
+    {syncWarning && <div className="notes-sync-warning" role="status">
+      <span>{syncWarning}</span>
+      <Button variant="quiet" onClick={() => setReloadKey((key) => key + 1)}>Retry sync</Button>
+    </div>}
+    <div className="notes-summary" aria-live="polite">
+      <span><strong>{notes.length}</strong> total notes</span>
+      <span><strong>{visibleFolders.length}</strong> folders here</span>
+      <span><strong>{visibleNotes.length}</strong> notes here</span>
+    </div>
+    {!normalizedSearch && <nav className="notes-breadcrumbs" aria-label="Notes folders">
+      {currentPath.map((segment, index) => {
+        const destination = currentPath.slice(0, index + 1);
+        const isCurrent = index === currentPath.length - 1;
+        return <span className="notes-breadcrumb-item" key={`${segment}-${index}`}>
+          {index > 0 && <ChevronRight size={14} aria-hidden="true" />}
+          <button type="button" aria-current={isCurrent ? 'page' : undefined} onClick={() => setOpenFolder(destination)}>{segment}</button>
+        </span>;
+      })}
+    </nav>}
+    <div className="notes-controls">
+      <label className="notes-control notes-search">
+        <Search size={16} aria-hidden="true" />
+        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes" aria-label="Search notes" />
+      </label>
+      <label className="notes-control">
+        <Filter size={16} aria-hidden="true" />
+        <select value={category} onChange={(event) => { setCategory(event.target.value); setOpenFolder(rootPath); }} aria-label="Filter by category">
+          <option value="">All categories</option>
+          {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+      </label>
+      <label className="notes-control">
+        <span className="notes-sort-label">Sort</span>
+        <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort notes">
+          <option value="newest">Recently updated</option>
+          <option value="oldest">Least recently updated</option>
+          <option value="title-asc">Title A–Z</option>
+          <option value="title-desc">Title Z–A</option>
+          <option value="largest">Largest file</option>
+        </select>
+      </label>
+    </div>
+    <section className="notes-grid" aria-label="Drive folders and notes">
+      {notes.length === 0 ? <EmptyState title="No notes available." text={syncWarning ? 'No notes are stored in the portal yet. Check Drive sharing and retry.' : 'No study notes have been synced yet.'} icon={Notebook} /> : totalVisibleItems ? <>
+        {visibleFolders.map((folder) => (
+          <button className="notes-folder-card" type="button" key={JSON.stringify(folder.path)} onClick={() => setOpenFolder(folder.path)}>
+            <span className="notes-folder-icon"><Folder size={23} /></span>
+            <span className="notes-folder-details"><strong>{folder.name}</strong><small>{folder.count} {folder.count === 1 ? 'note' : 'notes'} inside</small></span>
+            <ChevronRight size={18} className="notes-folder-arrow" />
+          </button>
+        ))}
+        {visibleNotes.map((note) => (
+        <article className="notes-card" key={note.id || note._id}>
+          <div className="notes-card-top">
+            <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}><FileText size={20} /></span>
+            <span className="notes-card-type">{(note.extension || note.fileType || 'FILE').toString().toUpperCase()}</span>
+          </div>
+          <span className="notes-card-category">{note.category || 'General'}</span>
+          <h2>{note.title || 'Untitled note'}</h2>
+          <p className="notes-card-folder" title={note.folderPath || 'Shared notes'}>{note.folderPath || 'Shared notes'}</p>
+          <div className="notes-card-footer">
+            <span>{note.size ? `${(Number(note.size) / (1024 * 1024)).toFixed(1)} MB` : note.fileType || 'Learning resource'}</span>
+            <Button variant="secondary" onClick={() => setPreviewNote(note)} aria-label={`View ${note.title || 'note'}`}>
+              View note <ArrowRight size={15} />
+            </Button>
+          </div>
+        </article>
+        ))}
+      </> : normalizedSearch
+        ? <EmptyState title="No matching notes" text="Try another search or category." icon={Notebook} />
+        : <EmptyState title={currentPath.length > 1 ? 'This folder is empty' : 'No notes available.'} text={currentPath.length > 1 ? 'No subfolders or notes were found in this Drive folder.' : 'No study notes have been synced yet.'} icon={FolderOpen} />}
+    </section>
+    {previewNote && <NotePreview note={previewNote} onClose={() => setPreviewNote(null)} />}
+  </>;
+}
+
+function NotePreview({ note, onClose }) {
+  const scrollContainerRef = useRef(null);
+  const pageRefs = useRef(new Map());
+  const [document, setDocument] = useState(null);
+  const [pageRatio, setPageRatio] = useState(0.72);
+  const [imageUrl, setImageUrl] = useState('');
+  const [textContent, setTextContent] = useState('');
+  const [mimeType, setMimeType] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [pageNumber, setPageNumber] = useState(1);
+  const [zoom, setZoom] = useState(1);
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let loadingTask;
+    let loadedDocument;
+    let objectUrl;
+
+    const loadPreview = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const blob = await api.getBlob(`/student/notes/${note.id || note._id}/view`, { timeoutMs: 120000 });
+        if (!active) return;
+        const contentType = (blob.type || note.viewMimeType || note.mimeType || '').split(';')[0].toLowerCase();
+        setMimeType(contentType);
+        if (contentType === 'application/pdf' || note.fileType === 'pdf' || note.viewMimeType === 'application/pdf') {
+          const pdfjsLib = await import('pdfjs-dist');
+          if (!active) return;
+          pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+          loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) });
+          loadedDocument = await loadingTask.promise;
+          if (!active) {
+            await loadedDocument.destroy();
+            return;
+          }
+          const firstPage = await loadedDocument.getPage(1);
+          const firstViewport = firstPage.getViewport({ scale: 1 });
+          setPageRatio(firstViewport.width / firstViewport.height);
+          setDocument(loadedDocument);
+        } else if (contentType.startsWith('image/')) {
+          objectUrl = URL.createObjectURL(blob);
+          setImageUrl(objectUrl);
+        } else if (contentType.startsWith('text/')) {
+          setTextContent(await blob.text());
+        } else {
+          throw new Error('This file type cannot be previewed in the portal yet.');
+        }
+      } catch (loadError) {
+        if (active) setError(loadError.message || 'Unable to preview this note.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    loadPreview();
+    return () => {
+      active = false;
+      if (loadingTask) loadingTask.destroy();
+      if (loadedDocument) loadedDocument.destroy();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [note.id, note._id]);
+
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') {
+        if (fullscreen) setFullscreen(false);
+        else onClose();
+      }
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [fullscreen, onClose]);
+
+  const goToPage = (targetPage) => {
+    const boundedPage = Math.max(1, Math.min(document?.numPages || 1, targetPage));
+    pageRefs.current.get(boundedPage)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  return <div className={`notes-preview-backdrop ${fullscreen ? 'notes-preview-backdrop-fullscreen' : ''}`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+    <section className={`notes-preview-dialog ${fullscreen ? 'notes-preview-fullscreen' : ''}`} role="dialog" aria-modal="true" aria-label={`Preview ${note.title || 'note'}`}>
+      <header className="notes-preview-header">
+        <div className="notes-preview-heading">
+          <span className="notes-file-icon"><FileText size={19} /></span>
+          <span><strong>{note.title || 'Note preview'}</strong><small>{note.category || 'Learning resource'} · In-portal preview</small></span>
+        </div>
+        <div className="notes-preview-header-actions">
+          <button className="notes-preview-close" type="button" onClick={() => setFullscreen((value) => !value)} aria-label={fullscreen ? 'Exit fullscreen' : 'View fullscreen'} title={fullscreen ? 'Exit fullscreen' : 'View fullscreen'}>
+            {fullscreen ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+          </button>
+          <button className="notes-preview-close" type="button" onClick={onClose} aria-label="Close note preview" title="Close"><X size={19} /></button>
+        </div>
+      </header>
+      {document && <div className="notes-pdf-toolbar" aria-label="PDF controls">
+        <div className="notes-pdf-page-controls">
+          <button type="button" onClick={() => goToPage(pageNumber - 1)} disabled={pageNumber <= 1} aria-label="Previous page"><ArrowLeft size={16} /></button>
+          <span>Page <strong>{pageNumber}</strong> of {document.numPages}</span>
+          <button type="button" onClick={() => goToPage(pageNumber + 1)} disabled={pageNumber >= document.numPages} aria-label="Next page"><ArrowRight size={16} /></button>
+        </div>
+        <div className="notes-pdf-zoom-controls">
+          <button type="button" onClick={() => setZoom((value) => Math.max(0.6, Number((value - 0.15).toFixed(2))))} disabled={zoom <= 0.6} aria-label="Zoom out"><span>−</span></button>
+          <span>{Math.round(zoom * 100)}%</span>
+          <button type="button" onClick={() => setZoom((value) => Math.min(1.8, Number((value + 0.15).toFixed(2))))} disabled={zoom >= 1.8} aria-label="Zoom in"><span>+</span></button>
+        </div>
+        <button className="notes-pdf-fit-button" type="button" onClick={() => setZoom(1)}>Fit width</button>
+      </div>}
+      <div className="notes-preview-body" ref={scrollContainerRef}>
+        {loading ? <div className="notes-preview-message"><span className="workspace-loading-spinner" /><strong>Opening note...</strong><p>Preparing a secure preview inside the portal.</p></div>
+          : error ? <div className="notes-preview-message notes-preview-error"><strong>Unable to preview note</strong><p>{error}</p></div>
+            : document ? <div className="notes-pdf-pages">
+              {Array.from({ length: document.numPages }, (_, index) => index + 1).map((page) => (
+                <NotesPdfPage
+                  key={page}
+                  document={document}
+                  pageNumber={page}
+                  zoom={zoom}
+                  pageRatio={pageRatio}
+                  scrollContainerRef={scrollContainerRef}
+                  onVisible={setPageNumber}
+                  onCardRef={(element) => {
+                    if (element) pageRefs.current.set(page, element);
+                    else pageRefs.current.delete(page);
+                  }}
+                />
+              ))}
+            </div>
+              : imageUrl ? <div className="notes-file-preview"><img src={imageUrl} alt={note.title || 'Note preview'} /></div>
+                : mimeType.startsWith('text/') ? <pre className="notes-text-preview">{textContent}</pre>
+                  : <div className="notes-preview-message"><strong>Preview unavailable</strong><p>This file format is not supported for in-portal viewing.</p></div>}
+      </div>
+      {document && <aside className="notes-preview-attribution" aria-label="Instagram @krushna_rajpure">
+        <Instagram size={16} strokeWidth={2.1} />
+        <span>@krushna_rajpure</span>
+      </aside>}
+    </section>
+  </div>;
+}
+
+function NotesPdfPage({ document, pageNumber, zoom, pageRatio, scrollContainerRef, onVisible, onCardRef }) {
+  const cardRef = useRef(null);
+  const canvasRef = useRef(null);
+  const [nearViewport, setNearViewport] = useState(false);
+
+  useEffect(() => {
+    const element = cardRef.current;
+    if (!element) return undefined;
+    const root = scrollContainerRef.current;
+    const loadObserver = new IntersectionObserver(([entry]) => {
+      setNearViewport(entry.isIntersecting);
+    }, {
+      root,
+      rootMargin: '650px 0px',
+      threshold: 0
+    });
+    const activePageObserver = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.2) onVisible(pageNumber);
+    }, {
+      root,
+      threshold: [0.2, 0.5, 0.8]
+    });
+    loadObserver.observe(element);
+    activePageObserver.observe(element);
+    return () => {
+      loadObserver.disconnect();
+      activePageObserver.disconnect();
+    };
+  }, [pageNumber, scrollContainerRef, onVisible]);
+
+  useEffect(() => {
+    if (!nearViewport || !canvasRef.current) return undefined;
+    let cancelled = false;
+    let renderTask;
+
+    const renderPage = async () => {
+      try {
+        const page = await document.getPage(pageNumber);
+        if (cancelled || !canvasRef.current) return;
+        const availableWidth = Math.max(280, (scrollContainerRef.current?.clientWidth || 900) - 64);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const scale = Math.min(1.35, availableWidth / baseViewport.width) * zoom;
+        const viewport = page.getViewport({ scale });
+        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+        const canvas = canvasRef.current;
+        const context = canvas.getContext('2d', { alpha: false });
+        canvas.width = Math.floor(viewport.width * pixelRatio);
+        canvas.height = Math.floor(viewport.height * pixelRatio);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        renderTask = page.render({
+          canvasContext: context,
+          viewport,
+          transform: pixelRatio === 1 ? null : [pixelRatio, 0, 0, pixelRatio, 0, 0]
+        });
+        await renderTask.promise;
+      } catch (renderError) {
+        if (!cancelled && renderError.name !== 'RenderingCancelledException') {
+          console.error(`Unable to render PDF page ${pageNumber}:`, renderError);
+        }
+      }
+    };
+
+    renderPage();
+    return () => {
+      cancelled = true;
+      if (renderTask) renderTask.cancel();
+      if (canvasRef.current) {
+        canvasRef.current.width = 0;
+        canvasRef.current.height = 0;
+      }
+    };
+  }, [document, nearViewport, pageNumber, scrollContainerRef, zoom]);
+
+  return <div
+    className={`notes-pdf-page-shell ${nearViewport ? 'notes-pdf-page-near' : ''}`}
+    ref={(element) => {
+      cardRef.current = element;
+      onCardRef(element);
+    }}
+    style={{ aspectRatio: String(pageRatio) }}
+    aria-label={`Page ${pageNumber}`}
+  >
+    <canvas ref={canvasRef} aria-label={`PDF page ${pageNumber}`} />
+    {!nearViewport && <span className="notes-pdf-page-number">Page {pageNumber}</span>}
+  </div>;
+}
+
+function StudentNoteDetail({ noteId }) {
+  const [note, setNote] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadNote = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const response = await api.get(`/student/notes/${noteId}`);
+        if (!active) return;
+        setNote(response?.data?.note || null);
+      } catch (loadError) {
+        if (!active) return;
+        setError(loadError.message || 'Unable to load this note.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    if (noteId) loadNote();
+    return () => { active = false; };
+  }, [noteId]);
+
+  if (loading) return <EmptyState title="Loading note..." text="Preparing the note preview for you." icon={Notebook} />;
+  if (error) return <EmptyState title="Note unavailable" text={error} action={<Link to="/student/notes" className="text-link">Back to notes</Link>} icon={Notebook} />;
+  if (!note) return <EmptyState title="Note not found" text="This note may no longer be available." action={<Link to="/student/notes" className="text-link">Back to notes</Link>} icon={Notebook} />;
+
+  return <>
+    <div className="breadcrumbs">
+      <Link to="/student/dashboard">Dashboard</Link>
+      <ChevronRight size={14} />
+      <Link to="/student/notes">Notes</Link>
+      <ChevronRight size={14} />
+      <span>{note.title || 'Note'}</span>
+    </div>
+    <PageHeading eyebrow="STUDY RESOURCE" title={note.title || 'Untitled note'} description={note.description || note.category || 'Shared study note'} actions={<Button variant="secondary" onClick={() => setPreviewOpen(true)}>View note</Button>} />
+    <section className="surface profile-card">
+      <div className="profile-fields">
+        <div className="profile-field"><span>Category</span><strong>{note.category || 'General'}</strong></div>
+        <div className="profile-field"><span>Folder</span><strong>{note.folderPath || 'Shared notes'}</strong></div>
+        <div className="profile-field"><span>File type</span><strong>{note.fileType || note.extension || 'Document'}</strong></div>
+        <div className="profile-field"><span>Extension</span><strong>{note.extension ? `.${note.extension}` : 'N/A'}</strong></div>
+        <div className="profile-field"><span>Status</span><strong>{note.isActive === false ? 'Inactive' : 'Available'}</strong></div>
+      </div>
+    </section>
+    {previewOpen && <NotePreview note={note} onClose={() => setPreviewOpen(false)} />}
+  </>;
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes);
+  if (!Number.isFinite(value) || value < 0) return '—';
+  if (value < 1024) return `${value} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let size = value;
+  let unitIndex = -1;
+  do {
+    size /= 1024;
+    unitIndex += 1;
+  } while (size >= 1024 && unitIndex < units.length - 1);
+  return `${size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function AdminNotesPage({ notify }) {
+  const [notes, setNotes] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [storage, setStorage] = useState(null);
+  const [search, setSearch] = useState('');
+  const [editingId, setEditingId] = useState('');
+  const [editedTitle, setEditedTitle] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState('');
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState('');
+  const [storageError, setStorageError] = useState('');
+
+  const loadData = async () => {
+    setError('');
+    const [notesResult, storageResult] = await Promise.allSettled([
+      api.get('/admin/notes'),
+      api.get('/admin/storage')
+    ]);
+    if (notesResult.status === 'rejected') throw notesResult.reason;
+    setNotes(notesResult.value?.data?.notes || []);
+    setStats(notesResult.value?.data?.stats || null);
+    if (storageResult.status === 'fulfilled') {
+      setStorage(storageResult.value?.data || null);
+      setStorageError('');
+    } else {
+      setStorage(null);
+      setStorageError(storageResult.reason?.message || 'MongoDB storage information is unavailable.');
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    Promise.allSettled([api.get('/admin/notes'), api.get('/admin/storage')])
+      .then(([notesResult, storageResult]) => {
+        if (!active) return;
+        if (notesResult.status === 'rejected') throw notesResult.reason;
+        setNotes(notesResult.value?.data?.notes || []);
+        setStats(notesResult.value?.data?.stats || null);
+        if (storageResult.status === 'fulfilled') {
+          setStorage(storageResult.value?.data || null);
+          setStorageError('');
+        } else {
+          setStorage(null);
+          setStorageError(storageResult.reason?.message || 'MongoDB storage information is unavailable.');
+        }
+      })
+      .catch((loadError) => {
+        if (active) setError(loadError.message || 'Unable to load note administration data.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const filteredNotes = notes.filter((note) => `${note.title} ${note.category} ${note.folderPath}`.toLowerCase().includes(search.trim().toLowerCase()));
+
+  const syncNotes = async () => {
+    setSyncing(true);
+    try {
+      const response = await api.post('/admin/notes/sync', {});
+      await loadData();
+      const summary = response?.data || {};
+      notify(`Drive sync complete: ${summary.filesAdded || 0} added, ${summary.filesUpdated || 0} updated.`);
+    } catch (syncError) {
+      notify(syncError.message || 'Unable to sync notes from Google Drive.');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const updateNote = async (note, changes) => {
+    const id = String(note._id || note.id);
+    setBusyId(id);
+    try {
+      await api.put(`/admin/notes/${id}`, changes);
+      await loadData();
+      setEditingId('');
+      notify('Note updated.');
+    } catch (updateError) {
+      notify(updateError.message || 'Unable to update this note.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const deleteNote = async (note) => {
+    if (!window.confirm(`Remove "${note.title}" from the student portal? It will remain in Google Drive.`)) return;
+    const id = String(note._id || note.id);
+    setBusyId(id);
+    try {
+      await api.del(`/admin/notes/${id}`);
+      await loadData();
+      notify('Note removed from the portal.');
+    } catch (deleteError) {
+      notify(deleteError.message || 'Unable to remove this note.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  if (loading) return <WorkspaceLoading title="Loading notes administration" description="Reading synced notes and MongoDB storage statistics." />;
+  if (error && !notes.length) return <EmptyState title="Unable to load note administration" text={error} icon={Notebook} action={<Button onClick={() => { setLoading(true); loadData().catch((loadError) => setError(loadError.message || 'Unable to load note administration data.')).finally(() => setLoading(false)); }}>Try again</Button>} />;
+
+  const mongoUsage = storage?.usagePercent;
+  const storageProgress = Number.isFinite(mongoUsage) ? Math.min(mongoUsage, 100) : 0;
+
+  return <>
+    <PageHeading eyebrow="CONTENT & STORAGE" title="Notes administration" description="Choose which Drive notes students can see, rename them, or remove them from the portal." actions={<Button icon={RefreshCw} disabled={syncing} onClick={syncNotes}>{syncing ? 'Syncing Drive...' : 'Sync Google Drive'}</Button>} />
+    <section className="admin-storage-grid" aria-label="MongoDB storage usage">
+      <article className="surface admin-storage-card">
+        <div className="study-planner-heading"><span className="planner-icon"><Database size={18} /></span><div><p className="eyebrow">MONGODB DATABASE</p><h2>{storage?.databaseName || 'Storage usage'}</h2></div></div>
+        <div className="admin-storage-values"><span><strong>{formatBytes(storage?.usedBytes)}</strong><small>Used</small></span><span><strong>{storage?.limitBytes ? formatBytes(storage.limitBytes) : 'Not configured'}</strong><small>{storage?.quotaSource === 'configured' ? 'Configured limit' : 'Estimated limit'}</small></span><span><strong>{storage?.remainingBytes === null || storage?.remainingBytes === undefined ? '—' : formatBytes(storage.remainingBytes)}</strong><small>Remaining</small></span></div>
+        <div className="progress-track goal-progress-track"><span style={{ width: `${storageProgress}%` }} /></div>
+        <p className={storageError ? 'planner-error' : 'planner-caption'} role={storageError ? 'alert' : undefined}>{storageError || (storage?.quotaSource === 'configured' ? `${mongoUsage}% of the configured quota.` : `Estimated against the 512 MB default (${mongoUsage}%). Set MONGODB_STORAGE_LIMIT_MB to match your actual cluster plan.`)}</p>
+      </article>
+      <article className="surface admin-storage-card">
+        <div className="study-planner-heading"><span className="planner-icon planner-icon-amber"><HardDrive size={18} /></span><div><p className="eyebrow">GOOGLE DRIVE NOTES</p><h2>Synced content</h2></div></div>
+        <div className="admin-storage-values"><span><strong>{stats?.totalNotes ?? 0}</strong><small>MongoDB note records</small></span><span><strong>{stats?.publicNotes ?? 0}</strong><small>Visible to students</small></span><span><strong>{formatBytes(stats?.googleDriveBytes)}</strong><small>Drive file size</small></span></div>
+        <p className="planner-caption">Note documents are in Google Drive; MongoDB stores their metadata. GridFS usage: {formatBytes(Object.values(storage?.gridFs || {}).reduce((total, item) => total + Number(item.bytes || 0), 0))} across photos and uploaded documents.</p>
+      </article>
+    </section>
+    <div className="table-toolbar"><label className="field-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes, folders or categories" /></label><span className="muted-inline">{filteredNotes.length} notes</span></div>
+    <section className="admin-note-list" aria-label="Manage notes">
+      {filteredNotes.map((note) => {
+        const id = String(note._id || note.id);
+        const visibleToStudents = note.isPublic === true || note.isPublic === undefined;
+        const deleted = Boolean(note.isDeleted);
+        return <article className={`surface admin-note-row ${deleted ? 'admin-note-deleted' : ''}`} key={id}>
+          <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}><FileText size={19} /></span>
+          <div className="admin-note-copy">
+            {editingId === id ? <form className="admin-note-rename" onSubmit={(event) => { event.preventDefault(); updateNote(note, { title: editedTitle }); }}><input autoFocus value={editedTitle} maxLength={500} onChange={(event) => setEditedTitle(event.target.value)} aria-label={`Rename ${note.title}`} /><Button variant="secondary" icon={Save} disabled={busyId === id}>Save</Button><Button type="button" variant="quiet" onClick={() => setEditingId('')}>Cancel</Button></form> : <strong>{note.title || 'Untitled note'}</strong>}
+            <small>{note.folderPath || note.category || 'Shared notes'} · {formatBytes(note.size)}</small>
+            <small>{deleted ? 'Removed from portal' : note.isActive === false ? 'Not currently in Drive' : visibleToStudents ? 'Visible to students' : 'Private to admin'}</small>
+          </div>
+          {!deleted && note.isActive !== false && <div className="admin-note-actions">
+            <button type="button" className="icon-button" title="Rename note" aria-label={`Rename ${note.title}`} onClick={() => { setEditingId(id); setEditedTitle(note.title || ''); }}><Pencil size={16} /></button>
+            <button type="button" className="icon-button" title={visibleToStudents ? 'Hide from students' : 'Publish to students'} aria-label={visibleToStudents ? 'Hide from students' : 'Publish to students'} disabled={busyId === id} onClick={() => updateNote(note, { isPublic: !visibleToStudents })}>{visibleToStudents ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+            <button type="button" className="icon-button danger-action" title="Remove from student portal" aria-label={`Delete ${note.title}`} disabled={busyId === id} onClick={() => deleteNote(note)}><Trash2 size={16} /></button>
+          </div>}
+        </article>;
+      })}
+      {!filteredNotes.length && <EmptyState title="No notes found" text={search ? 'Try another search.' : 'Sync Google Drive to discover study notes.'} icon={Notebook} />}
+    </section>
+  </>;
+}
+
+function AdminStudentPhoto({ student, size = '' }) {
+  const [photoUrl, setPhotoUrl] = useState('');
+  const [photoUnavailable, setPhotoUnavailable] = useState(false);
+  const studentId = String(student?._id || student?.id || '');
+  const initials = (student?.name || 'Student').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('');
+
+  useEffect(() => {
+    let active = true;
+    let objectUrl = '';
+    setPhotoUrl('');
+    setPhotoUnavailable(false);
+    if (!studentId || !student?.profilePhotoId) return () => { active = false; };
+
+    api.getBlob(`/admin/students/${studentId}/photo`)
+      .then((blob) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(blob);
+        setPhotoUrl(objectUrl);
+      })
+      .catch(() => {
+        if (active) setPhotoUnavailable(true);
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [studentId, student?.profilePhotoId]);
+
+  return <span className={`admin-student-photo ${size}`.trim()} title={photoUnavailable ? 'Profile photo unavailable' : student?.name || 'Student'}>{photoUrl ? <img src={photoUrl} alt={`${student?.name || 'Student'} profile`} /> : initials || 'S'}</span>;
+}
+
+function AdminStudentDirectory() {
+  const [students, setStudents] = useState([]);
+  const [search, setSearch] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    api.get('/admin/students')
+      .then((response) => {
+        if (active) setStudents(response?.data?.students || []);
+      })
+      .catch((loadError) => {
+        if (active) setError(loadError.message || 'Unable to load student accounts.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, []);
+
+  const visibleStudents = students.filter((student) => (
+    `${student.name} ${student.email} ${student.studentId} ${student.departmentId?.name || ''}`.toLowerCase().includes(search.trim().toLowerCase())
+  ));
+
+  if (loading) return <WorkspaceLoading title="Loading student directory" description="Fetching student names, academic details and profile photos." />;
+  if (error && !students.length) return <EmptyState title="Unable to load students" text={error} icon={Users} />;
+
+  return <>
+    <PageHeading eyebrow="PEOPLE" title="Students" description="Browse all registered students, their photos and academic assignments." />
+    <div className="table-toolbar"><label className="field-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, email, roll number..." /></label><span className="muted-inline">{visibleStudents.length} of {students.length} students</span></div>
+    {visibleStudents.length ? <section className="admin-student-grid" aria-label="Student directory">
+      {visibleStudents.map((student) => <button className="surface admin-student-card" type="button" key={student._id} onClick={() => setSelectedStudent(student)}>
+        <AdminStudentPhoto student={student} />
+        <span className="admin-student-card-copy"><strong>{student.name || 'Unnamed student'}</strong><small>{student.email || 'No email'}</small><small>{student.studentId || 'Roll number not set'}</small></span>
+        <ChevronRight size={17} />
+      </button>)}
+    </section> : <EmptyState title="No students found" text={search ? 'Try another search term.' : 'Student accounts will appear here after registration.'} icon={Users} />}
+    {selectedStudent && <div className="admin-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedStudent(null); }}><section className="admin-modal admin-student-dialog" role="dialog" aria-modal="true" aria-labelledby="student-detail-title">
+      <div className="admin-modal-header"><div><p className="eyebrow">STUDENT PROFILE</p><h2 id="student-detail-title">{selectedStudent.name || 'Student'}</h2></div><button type="button" className="icon-button" aria-label="Close student profile" onClick={() => setSelectedStudent(null)}><X size={17} /></button></div>
+      <div className="admin-student-profile"><AdminStudentPhoto student={selectedStudent} size="large" /><div className="profile-fields">
+        <div className="profile-field"><span>Full name</span><strong>{selectedStudent.name || 'Not provided'}</strong></div>
+        <div className="profile-field"><span>Email</span><strong>{selectedStudent.email || 'Not provided'}</strong></div>
+        <div className="profile-field"><span>Roll number</span><strong>{selectedStudent.studentId || 'Not provided'}</strong></div>
+        <div className="profile-field"><span>Department</span><strong>{selectedStudent.departmentId?.name || 'Not assigned'}</strong></div>
+        <div className="profile-field"><span>Year / semester</span><strong>{[selectedStudent.yearId?.name, selectedStudent.semesterId?.name].filter(Boolean).join(' · ') || 'Not assigned'}</strong></div>
+        <div className="profile-field"><span>Status</span><strong>{selectedStudent.status || 'Not available'}</strong></div>
+      </div></div>
+    </section></div>}
+  </>;
 }
 
 function MyraaPage() {
@@ -652,7 +1394,8 @@ function AdminDashboard({ practicalList, teacherList = [], studentList = [], cat
     ['Subjects', '/admin/subjects', BookOpen, subjects.length],
     ['Teachers', '/admin/teachers', Users, teachers.length],
     ['Students', '/admin/students', GraduationCap, students.length],
-    ['Practicals', '/admin/practicals', ClipboardList, practicalList.length]
+    ['Practicals', '/admin/practicals', ClipboardList, practicalList.length],
+    ['Notes', '/admin/notes', Notebook, 'Manage']
   ];
   return <>
     <PageHeading eyebrow="COLLEGE ADMINISTRATION" title="Administration overview" description="A live view of academic structure, accounts, and practical content." actions={<Link to="/admin/subjects" className="button button-secondary"><Plus size={16} />Add subject</Link>} />
@@ -670,7 +1413,7 @@ function AdminDashboard({ practicalList, teacherList = [], studentList = [], cat
         <div className="panel-heading"><div><p className="eyebrow">TEACHER UPDATES</p><h2>Recent activity</h2></div><Link className="text-link" to="/admin/notifications">View all <ArrowRight size={15} /></Link></div>
         {adminNotifications.length ? <div className="admin-recent-list">{adminNotifications.slice(0, 5).map((item) => <div className={`admin-recent-row ${item.read ? '' : 'admin-recent-unread'}`} key={item._id}><span className="admin-recent-icon"><Activity size={17} /></span><span className="admin-recent-copy"><strong>{item.message}</strong><small>{item.actorId?.name || 'Teacher'} · {item.createdAt ? new Date(item.createdAt).toLocaleString() : 'Recently'}</small></span></div>)}</div> : <EmptyState title="No teacher activity yet" text="Subject assignments, new subjects and practical updates from teachers will appear here." icon={Activity} />}
       </section>
-      <section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">ACADEMIC STRUCTURE</p><h2>Quick access</h2></div></div>{quickAccess.map(([label, to, Icon, count]) => <Link className="quick-row" to={to} key={to}><span><Icon size={17} /></span><strong>{label}</strong><small>{count} records</small><ChevronRight size={16} /></Link>)}</section>
+      <section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">ACADEMIC STRUCTURE</p><h2>Quick access</h2></div></div>{quickAccess.map(([label, to, Icon, count]) => <Link className="quick-row" to={to} key={to}><span><Icon size={17} /></span><strong>{label}</strong><small>{typeof count === 'number' ? `${count} records` : count}</small><ChevronRight size={16} /></Link>)}</section>
     </div>
     {latestPracticals.length > 0 && <section className="surface dashboard-panel admin-latest-practicals"><div className="panel-heading"><div><p className="eyebrow">CONTENT MANAGEMENT</p><h2>Latest practicals</h2></div><Link className="text-link" to="/admin/practicals">View all <ArrowRight size={15} /></Link></div><div className="admin-recent-list">{latestPracticals.map((item) => <Link className="admin-recent-row" key={item._id || item.id} to="/admin/practicals"><span className="admin-recent-icon"><ClipboardList size={17} /></span><span className="admin-recent-copy"><strong>{item.title || 'Untitled practical'}</strong><small>{item.subjectId?.name || 'Subject not assigned'} · Practical {number(item.practicalNumber || 1)}</small></span><Status>{item.status === 'published' || item.published ? 'Published' : 'Draft'}</Status></Link>)}</div></section>}
   </>;
@@ -862,6 +1605,7 @@ export default function PortalExperience() {
   const [studentSubjectList, setStudentSubjectList] = useState([]);
   const [studentPracticalList, setStudentPracticalList] = useState([]);
   const [completedIds, setCompletedIds] = useState([]);
+  const [progressRecords, setProgressRecords] = useState([]);
   const [teacherSubjectList, setTeacherSubjectList] = useState([]);
   const [teacherPracticalList, setTeacherPracticalList] = useState([]);
   const [teacherStudentList, setTeacherStudentList] = useState([]);
@@ -873,6 +1617,19 @@ export default function PortalExperience() {
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); };
+
+  useEffect(() => {
+    const handleSearchShortcut = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault();
+        document.querySelector('.global-search input')?.focus();
+      } else if (event.key === 'Escape') {
+        setSearch('');
+      }
+    };
+    window.addEventListener('keydown', handleSearchShortcut);
+    return () => window.removeEventListener('keydown', handleSearchShortcut);
+  }, []);
 
   const refreshTeacherData = async () => {
     const [subjectResponse, practicalResponse, studentResponse] = await Promise.all([
@@ -908,7 +1665,9 @@ export default function PortalExperience() {
           if (!isMounted) return;
           setStudentSubjectList(subjectResponse?.data?.subjects || []);
           setStudentPracticalList(practicalResponse?.data?.practicals || []);
-          setCompletedIds((progressResponse?.data?.progress || []).map((item) => String(item.practicalId?._id || item.practicalId)));
+          const loadedProgress = progressResponse?.data?.progress || [];
+          setProgressRecords(loadedProgress);
+          setCompletedIds(loadedProgress.map((item) => String(item.practicalId?._id || item.practicalId)));
           setBookmarkedIds((bookmarkResponse?.data?.bookmarks || []).map((item) => String(item.practicalId?._id || item.practicalId)));
         }
 
@@ -987,9 +1746,11 @@ export default function PortalExperience() {
   const completePractical = async (id) => {
     const wasComplete = completedIds.includes(String(id));
     try {
-      if (wasComplete) await progressService.uncomplete(id);
-      else await progressService.complete(id);
+      const response = wasComplete ? await progressService.uncomplete(id) : await progressService.complete(id);
       setCompletedIds((current) => wasComplete ? current.filter((item) => item !== String(id)) : [...current, String(id)]);
+      setProgressRecords((current) => wasComplete
+        ? current.filter((item) => String(item.practicalId?._id || item.practicalId) !== String(id))
+        : [{ ...(response?.data?.progress || {}), practicalId: response?.data?.progress?.practicalId || id, completedAt: response?.data?.progress?.completedAt || new Date().toISOString() }, ...current]);
       notify(wasComplete ? 'Practical marked incomplete.' : 'Practical marked complete.');
     } catch (error) {
       notify(error.message || 'Could not update practical progress.');
@@ -1017,6 +1778,7 @@ export default function PortalExperience() {
   const logout = () => { setUser(null); navigate('/login'); };
   const subjectMatch = route.match(/^\/subjects\/([^/]+)/);
   const practicalMatch = route.match(/^\/practicals\/([^/]+)/);
+  const noteMatch = route.match(/^\/notes\/([^/]+)/);
   let page;
 
   if (dataLoading && !(role === 'student' && ['/myraa', '/profile'].includes(route))) {
@@ -1027,11 +1789,13 @@ export default function PortalExperience() {
     const activeStudentPracticals = studentPracticalList;
     const activeStudentSubjects = studentSubjectList;
     if (route.startsWith('/academic-documents')) page = <AcademicDocumentsPage role={role} notify={notify} />;
-    else if (route === '/dashboard') page = <StudentDashboard user={user} practicalList={activeStudentPracticals} bookmarkedIds={bookmarkedIds} subjectList={activeStudentSubjects} completedIds={completedIds} />;
+    else if (route === '/dashboard') page = <StudentDashboard user={user} practicalList={activeStudentPracticals} bookmarkedIds={bookmarkedIds} subjectList={activeStudentSubjects} completedIds={completedIds} progressRecords={progressRecords} notify={notify} />;
     else if (route === '/subjects') page = <StudentSubjects user={user} practicalList={activeStudentPracticals} subjectList={activeStudentSubjects} completedIds={completedIds} />;
     else if (subjectMatch) page = <StudentSubjectDetail subjectId={subjectMatch[1]} subjectList={activeStudentSubjects} completedIds={completedIds} />;
     else if (route === '/practicals') page = <StudentPracticals practicalList={activeStudentPracticals} subjectList={activeStudentSubjects} completedIds={completedIds} />;
     else if (practicalMatch) page = <StudentPracticalDetail practicalId={practicalMatch[1]} bookmarkedIds={bookmarkedIds} toggleBookmark={toggleBookmark} completePractical={completePractical} notify={notify} subjectList={activeStudentSubjects} completedIds={completedIds} />;
+    else if (route === '/notes') page = <NotesPage />;
+    else if (noteMatch) page = <StudentNoteDetail noteId={noteMatch[1]} />;
     else if (route === '/bookmarks') page = <StudentBookmarks practicalList={activeStudentPracticals} bookmarkedIds={bookmarkedIds} subjectList={activeStudentSubjects} />;
     else if (route === '/myraa') page = <MyraaPage />;
     else if (route === '/profile') page = <ProfilePage user={user} role={role} />;
@@ -1050,7 +1814,9 @@ export default function PortalExperience() {
     else if (route === '/profile') page = <ProfilePage user={user} role={role} notify={notify} />;
   } else if (role === 'admin') {
     if (route === '/dashboard') page = <AdminDashboard practicalList={practicalList} teacherList={adminTeacherList} studentList={adminStudentList} catalog={adminCatalog} subjectList={adminSubjectList} adminNotifications={adminNotifications} />;
-    else if (['/departments', '/years', '/semesters', '/subjects', '/teachers', '/students', '/practicals'].includes(route)) page = <AdminManagement page={route.slice(1)} practicalList={practicalList} notify={notify} />;
+    else if (route === '/students') page = <AdminStudentDirectory />;
+    else if (route === '/notes') page = <AdminNotesPage notify={notify} />;
+    else if (['/departments', '/years', '/semesters', '/subjects', '/teachers', '/practicals'].includes(route)) page = <AdminManagement page={route.slice(1)} practicalList={practicalList} notify={notify} />;
     else if (route === '/notifications') page = <AdminNotificationsPage items={adminNotifications} onMarkRead={markNotificationRead} />;
     else if (route === '/settings') page = <AdminSettings notify={notify} />;
     else if (route === '/profile') page = <ProfilePage user={user} role={role} notify={notify} />;
