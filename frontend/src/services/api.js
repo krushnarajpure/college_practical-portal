@@ -31,7 +31,8 @@ async function fetchWithTimeout(url, options, timeoutMs = REQUEST_TIMEOUT_MS) {
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
     if (error.name === 'AbortError') {
-      throw new Error('The server took too long to respond. Please try again.');
+      const timeoutSeconds = Math.ceil(timeoutMs / 1000);
+      throw new Error(`The server did not respond to ${url.pathname} within ${timeoutSeconds} seconds. It may be waking up after inactivity; please try again.`);
     }
     throw error;
   } finally {

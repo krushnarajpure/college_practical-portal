@@ -4,6 +4,7 @@ import api from '../services/api';
 const AuthContext = createContext(null);
 const storageKey = 'college_practical_user';
 const tokenKey = 'college_practical_token';
+const AUTH_REQUEST_TIMEOUT_MS = 60000;
 
 function readStoredUser() {
   try {
@@ -66,7 +67,11 @@ export function AuthProvider({ children }) {
   };
 
   const login = async ({ email, password, role }) => {
-    const payload = await api.post('/auth/login', { email, password, role });
+    const payload = await api.request('/auth/login', {
+      method: 'POST',
+      body: { email, password, role },
+      timeoutMs: AUTH_REQUEST_TIMEOUT_MS
+    });
     const signedIn = payload?.data?.user;
     const jwtToken = payload?.data?.token;
 
@@ -79,18 +84,22 @@ export function AuthProvider({ children }) {
   };
 
   const register = async (details) => {
-    const payload = await api.post('/auth/register', {
-      name: details.fullName,
-      email: details.email,
-      password: details.password,
-      role: details.role,
-      ...(details.role === 'student' ? {
-        studentId: details.studentId,
-        departmentId: details.departmentId,
-        yearId: details.yearId,
-        semesterId: details.semesterId
-      } : {}),
-      ...(details.role === 'teacher' ? { employeeId: details.employeeId, departmentId: details.departmentId } : {})
+    const payload = await api.request('/auth/register', {
+      method: 'POST',
+      body: {
+        name: details.fullName,
+        email: details.email,
+        password: details.password,
+        role: details.role,
+        ...(details.role === 'student' ? {
+          studentId: details.studentId,
+          departmentId: details.departmentId,
+          yearId: details.yearId,
+          semesterId: details.semesterId
+        } : {}),
+        ...(details.role === 'teacher' ? { employeeId: details.employeeId, departmentId: details.departmentId } : {})
+      },
+      timeoutMs: AUTH_REQUEST_TIMEOUT_MS
     });
     const createdUser = payload?.data?.user;
     const jwtToken = payload?.data?.token;

@@ -4,6 +4,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
+import mongoose from 'mongoose';
 import { env } from './config/env.js';
 import authRoutes from './routes/authRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
@@ -61,12 +62,16 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/api/health', (_req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'College Practical Portal API is running.',
+  const databaseReady = mongoose.connection.readyState === 1;
+  res.status(databaseReady ? 200 : 503).json({
+    success: databaseReady,
+    message: databaseReady
+      ? 'College Practical Portal API is running.'
+      : 'College Practical Portal API is unavailable because MongoDB is not connected.',
     data: {
       app: 'college-practical-portal-backend',
-      environment: process.env.NODE_ENV || 'development'
+      environment: process.env.NODE_ENV || 'development',
+      database: databaseReady ? 'connected' : 'disconnected'
     }
   });
 });
