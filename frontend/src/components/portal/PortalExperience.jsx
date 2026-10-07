@@ -484,7 +484,7 @@ function NotesPage() {
         setLoading(true);
         setError('');
         setSyncWarning('');
-        const response = await api.get('/student/notes', undefined, 120000);
+        const response = await api.get('/student/notes');
         if (!active) return;
         const uniqueNotes = new Map();
         for (const note of Array.isArray(response?.data?.notes) ? response.data.notes : []) {
@@ -874,10 +874,15 @@ function NotesPdfPage({ document, pageNumber, zoom, pageRatio, scrollContainerRe
 }
 
 function StudentNoteDetail({ noteId }) {
+  const location = useLocation();
   const [note, setNote] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  useEffect(() => {
+    setPreviewOpen(new URLSearchParams(location.search).get('preview') === '1');
+  }, [location.search, noteId]);
 
   useEffect(() => {
     let active = true;
@@ -913,7 +918,9 @@ function StudentNoteDetail({ noteId }) {
       <ChevronRight size={14} />
       <span>{note.title || 'Note'}</span>
     </div>
-    <PageHeading eyebrow="STUDY RESOURCE" title={note.title || 'Untitled note'} description={note.description || note.category || 'Shared study note'} actions={<Button variant="secondary" onClick={() => setPreviewOpen(true)}>View note</Button>} />
+    <PageHeading eyebrow="STUDY RESOURCE" title={note.title || 'Untitled note'} description={note.description || note.category || 'Shared study note'} actions={note.storageType === 'driveLink' && note.driveUrl
+      ? <a className="button button-secondary" href={note.driveUrl} target="_blank" rel="noopener noreferrer">Open Drive <ExternalLink size={15} /></a>
+      : <Button variant="secondary" onClick={() => setPreviewOpen(true)}>View note</Button>} />
     <section className="surface profile-card">
       <div className="profile-fields">
         <div className="profile-field"><span>Category</span><strong>{note.category || 'General'}</strong></div>

@@ -126,37 +126,12 @@ export const syncNotesFromDrive = async (_req, res, next) => {
 
 export const listStudentNotes = async (_req, res, next) => {
   try {
-    let syncSummary;
-    let syncError = null;
-    try {
-      syncSummary = await syncGoogleDriveNotes();
-    } catch (error) {
-      console.error('[Notes] Google Drive sync failed:', error);
-      const driveError = error.response?.data?.error;
-      const disabledDriveApi = driveError?.details?.some(
-        (detail) => detail.reason === 'SERVICE_DISABLED' && detail.metadata?.service === 'drive.googleapis.com'
-      );
-      if (disabledDriveApi) {
-        const activationUrl = driveError.details.find((detail) => detail.metadata?.activationUrl)?.metadata.activationUrl;
-        syncError = `Google Drive API is disabled for the service-account project. Enable it in Google Cloud Console${activationUrl ? `: ${activationUrl}` : ''}, wait a few minutes, then retry.`;
-      } else {
-        syncError = `Google Drive sync failed${error.message ? `: ${error.message}` : '. Previously synced notes are still available; check Drive credentials and folder access.'}`;
-      }
-    }
-
     const notes = await Note.find({
       isActive: true,
       isDeleted: { $ne: true },
       fileType: { $ne: 'folder' },
       $or: [{ isPublic: true }, { isPublic: { $exists: false } }]
     }).sort({ updatedAt: -1 });
-    if (syncError && notes.length === 0) {
-      return res.status(503).json(errorResponse(
-        syncError,
-        'GoogleDriveSyncFailed',
-        503
-      ));
-    }
 
     const categoryCounts = notes.reduce((counts, note) => {
       const category = note.category || 'General';
@@ -178,9 +153,7 @@ export const listStudentNotes = async (_req, res, next) => {
         };
       }),
       totalNotes: notes.length,
-      categoryCounts,
-      syncSummary,
-      syncError
+      categoryCounts
     }));
   } catch (error) {
     next(error);
@@ -389,13 +362,14 @@ export const getStudentNote = async (req, res, next) => {
 export const searchStudentNotesForAssistant = async (req, res, next) => {
   try {
     const query = String(req.query?.q || '').trim().slice(0, 100);
-    if (!query) return res.status(400).json(errorResponse('Enter a note title, subject, or topic to search.', 'Bad Request', 400));
-    const expression = new RegExp(escapeRegex(query), 'i');
-    const notes = await Note.find({
+    const filter = {
       isActive: true,
       isDeleted: { $ne: true },
-      $or: [{ isPublic: true }, { isPublic: { $exists: false } }],
-      $and: [{
+      $or: [{ isPublic: true }, { isPublic: { $exists: false } }]
+    };
+    if (query) {
+      const expression = new RegExp(escapeRegex(query), 'i');
+      filter.$and = [{
         $or: [
           { title: expression },
           { customTitle: expression },
@@ -404,8 +378,9 @@ export const searchStudentNotesForAssistant = async (req, res, next) => {
           { folderPath: expression },
           { description: expression }
         ]
-      }]
-    })
+      }];
+    }
+    const notes = await Note.find(filter)
       .select('title customTitle originalName fileType mimeType storageType size category folderPath description createdAt')
       .sort({ updatedAt: -1 })
       .limit(20)

@@ -38,6 +38,19 @@ export default function MyraaIntegrated() {
       const response = await api.get('/student/notes/assistant/search', { q: query });
       return response?.data || { notes: [] };
     },
+    openNote: async ({ query = '' }) => {
+      const response = await api.get('/student/notes/assistant/search', { q: query });
+      const notes = response?.data?.notes || [];
+      const note = notes.find((item) => item.fileType === 'pdf' || item.mimeType === 'application/pdf')
+        || notes.find((item) => item.fileType === 'text')
+        || notes[0];
+      if (!note) throw new Error(query ? `No published note matched "${query}".` : 'There are no published notes to open.');
+      if (note.fileType === 'driveLink') {
+        throw new Error('The matching item is a Drive link, not a portal PDF. Open it from the Notes page.');
+      }
+      navigate(`/student/notes/${note.id}?preview=1`);
+      return { id: note.id, title: note.title, fileType: note.fileType };
+    },
     readNotePdf: async ({ noteId }) => api.get(`/student/notes/${noteId}/text`, undefined, 120000)
   };
 

@@ -54,6 +54,11 @@ interface PortalTools {
   readNotePdf: (args: { noteId: string }) => Promise<{
     data?: { fileName: string; pageCount: number | null; text: string; truncated: boolean };
   }>;
+  openNote: (args: { query: string }) => Promise<{
+    id: string;
+    title: string;
+    fileType: string;
+  }>;
 }
 
 interface AppProps {
@@ -64,6 +69,7 @@ interface AppProps {
 
 export default function App({ portalTools, onOpenPortalPractical, onNavigatePortal }: AppProps = {}) {
   const [state, setState] = useState<LiveState>("disconnected");
+  const lastNotesNavigationAt = useRef(0);
 
   // Real-time Screen Sharing states
   const [isScreenSharing, setIsScreenSharing] = useState<boolean>(false);
@@ -610,6 +616,14 @@ export default function App({ portalTools, onOpenPortalPractical, onNavigatePort
       onTranscription: (role, text) => {
         if (role === "user") {
           const command = text.toLowerCase().trim();
+          const asksToOpenNotes = /\bnotes?\b/.test(command)
+            && /\b(open|show|kholo|khol|khul|dikhav|dikha|dakhav)\b|उघड|खोल/.test(command)
+            && !/\b(don't|do not|nako|mat)\b/.test(command);
+          if (asksToOpenNotes && onNavigatePortal && Date.now() - lastNotesNavigationAt.current > 1500) {
+            lastNotesNavigationAt.current = Date.now();
+            onNavigatePortal("notes");
+            setModelCaption("Opening Notes...");
+          }
           if (/\b(stop|sleep)\s+myraa\b|\bmyraa\s+(stop|sleep)\b/.test(command)) {
             sessionRef.current?.disconnect();
             setErrorText(null);
@@ -631,7 +645,7 @@ export default function App({ portalTools, onOpenPortalPractical, onNavigatePort
       onToolCall: (name, args, callback) => {
         console.log(`[App] Tool call triggered: ${name}`, args);
 
-        if (['listPortalPracticals', 'readPortalPracticalPdf', 'openPortalPracticalPdf', 'searchPortalNotes', 'readPortalNotePdf', 'navigatePortal'].includes(name)) {
+        if (['listPortalPracticals', 'readPortalPracticalPdf', 'openPortalPracticalPdf', 'searchPortalNotes', 'readPortalNotePdf', 'openPortalNote', 'navigatePortal'].includes(name)) {
           void (async () => {
             try {
               if (!portalTools) throw new Error('Portal tools are available only inside the signed-in student website.');
@@ -653,6 +667,11 @@ export default function App({ portalTools, onOpenPortalPractical, onNavigatePort
                 const note = response?.data;
                 if (!note?.text) throw new Error('No readable note text was returned.');
                 callback({ result: JSON.stringify({ fileName: note.fileName, pageCount: note.pageCount, truncated: note.truncated, text: note.text }) });
+                return;
+              }
+              if (name === 'openPortalNote') {
+                const note = await portalTools.openNote({ query: String(args?.query || '') });
+                callback({ result: `Opened ${note.title} in the College Practical Portal note viewer.` });
                 return;
               }
               if (name === 'listPortalPracticals') {

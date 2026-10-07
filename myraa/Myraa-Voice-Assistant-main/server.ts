@@ -1243,7 +1243,7 @@ async function startServer() {
           "- For questions about this signed-in student's practicals, call listPortalPracticals instead of guessing or searching external websites. Use topic='Python' for Python practicals and report the returned count and titles.",
           "- When asked to read or explain a numbered practical, first find its exact item with listPortalPracticals, then call readPortalPracticalPdf with that item's id. Explain only returned PDF text and say when the file is scanned, unavailable, or truncated.",
           "- When asked to open a practical PDF, call openPortalPracticalPdf with practicalId when known, or query with the subject/title words when it is not known. This opens the practical detail inside the current College Practical Portal and keeps this voice session connected; do not follow it with navigatePortal, back, dashboard navigation, or another route change unless Krushna asks for that.",
-        "- For a request to open the Notes page, call navigatePortal with target='notes'. This opens the Notes page in the current signed-in portal; do not open a browser, search the web, or create another page.",
+        "- For a request to open the Notes page, call navigatePortal with target='notes'. This opens the Notes page in the current signed-in portal; do not open a browser, search the web, or create another page. For a specific note/PDF, call openPortalNote with its subject/title words; that opens the matching published note in the portal viewer.",
         "- When asked to find, read, or explain a topic from the student's notes, search published notes with searchPortalNotes, then read a matching PDF or created text note with readPortalNotePdf using its returned id. Use only the returned text, describe the source note, and say clearly if no matching published note is found or its PDF is scanned/unreadable/truncated. Never use web search as a substitute for portal notes.",
         "- If the student asks both to open Notes and explain a topic, navigate to Notes and then search/read the published note using the portal note tools; Myraa remains connected while the portal route changes.",
         "- For other website navigation commands, call navigatePortal with one of dashboard, practicals, academic-documents, notes, subjects, bookmarks, profile, or back. Use the current authenticated portal session; never create a duplicate page or claim navigation without the tool result.",
@@ -1279,6 +1279,8 @@ async function startServer() {
             },
             activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
           },
+          inputAudioTranscription: {},
+          outputAudioTranscription: {},
           systemInstruction: finalInstructions,
           tools: [
             {
@@ -1533,6 +1535,16 @@ async function startServer() {
                                       noteId: { type: Type.STRING, description: "Published note id returned by searchPortalNotes." },
                                     },
                                     required: ["noteId"],
+                                  },
+                                },
+                                {
+                                  name: "openPortalNote",
+                                  description: "Find and open a matching published PDF or text note in the current College Practical Portal viewer. Use this when the student says to open or show a note/PDF. Do not use browser search.",
+                                  parameters: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                      query: { type: Type.STRING, description: "Optional subject, topic, or note title to match, such as C++." },
+                                    },
                                   },
                                 },
                                 {
@@ -2803,8 +2815,9 @@ async function startServer() {
             }
 
             // Transcription of model output (text chunk)
-            const modelText = (message.serverContent as any)?.modelTurn
-              ?.parts?.[0]?.text;
+            const serverContent = message.serverContent;
+            const modelText = serverContent?.outputTranscription?.text
+              || serverContent?.modelTurn?.parts?.find((part) => part.text)?.text;
             if (modelText) {
               clientWs.send(
                 JSON.stringify({
@@ -2817,8 +2830,8 @@ async function startServer() {
             }
 
             // User input transcription (user speech text translated by Gemini)
-            const userTextOutput = (message.serverContent as any)?.userTurn
-              ?.parts?.[0]?.text;
+            const userTextOutput = serverContent?.inputTranscription?.text
+              || (serverContent as any)?.userTurn?.parts?.[0]?.text;
             if (userTextOutput) {
               clientWs.send(
                 JSON.stringify({
