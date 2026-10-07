@@ -1242,7 +1242,10 @@ async function startServer() {
           "- For questions about this signed-in student's practicals, call listPortalPracticals instead of guessing or searching external websites. Use topic='Python' for Python practicals and report the returned count and titles.",
           "- When asked to read or explain a numbered practical, first find its exact item with listPortalPracticals, then call readPortalPracticalPdf with that item's id. Explain only returned PDF text and say when the file is scanned, unavailable, or truncated.",
           "- When asked to open a practical PDF, call openPortalPracticalPdf with practicalId when known, or query with the subject/title words when it is not known. This opens the practical detail inside the current College Practical Portal and keeps this voice session connected; do not follow it with navigatePortal, back, dashboard navigation, or another route change unless Krushna asks for that.",
-        "- For website navigation commands, call navigatePortal with one of dashboard, practicals, academic-documents, subjects, bookmarks, profile, or back. Use the current authenticated portal session; never create a duplicate page or claim navigation without the tool result.",
+        "- For a request to open the Notes page, call navigatePortal with target='notes'. This opens the Notes page in the current signed-in portal; do not open a browser, search the web, or create another page.",
+        "- When asked to find, read, or explain a topic from the student's notes, search published notes with searchPortalNotes, then read a matching PDF or created text note with readPortalNotePdf using its returned id. Use only the returned text, describe the source note, and say clearly if no matching published note is found or its PDF is scanned/unreadable/truncated. Never use web search as a substitute for portal notes.",
+        "- If the student asks both to open Notes and explain a topic, navigate to Notes and then search/read the published note using the portal note tools; Myraa remains connected while the portal route changes.",
+        "- For other website navigation commands, call navigatePortal with one of dashboard, practicals, academic-documents, notes, subjects, bookmarks, profile, or back. Use the current authenticated portal session; never create a duplicate page or claim navigation without the tool result.",
         "- Be accurate and teach the reasoning, not just the answer. Never invent details from a practical PDF, course, or student account. If the relevant material is not visible or provided, ask the student to open/share it or paste the relevant section.",
         "- When explicitly asked to do a task on the college portal, use the visible browser/desktop tools only for that requested task. Do not claim portal access or completion if the page, login, or required permission is unavailable.",
         "- Before submitting forms, changing academic/account data, sending messages, or deleting anything on the portal, summarize the intended change and get explicit confirmation. Do not bypass role permissions or act on inferred requests.",
@@ -1510,6 +1513,28 @@ async function startServer() {
                                   },
                                 },
                                 {
+                                  name: "searchPortalNotes",
+                                  description: "Search notes published to the signed-in student in the current College Practical Portal. Use this for requests about notes, such as C++ notes; never search external websites instead.",
+                                  parameters: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                      query: { type: Type.STRING, description: "Subject, topic, or note title to search for, such as C++." },
+                                    },
+                                    required: ["query"],
+                                  },
+                                },
+                                {
+                                  name: "readPortalNotePdf",
+                                  description: "Read selectable text from a published PDF note or created text note. Use only a note id returned by searchPortalNotes.",
+                                  parameters: {
+                                    type: Type.OBJECT,
+                                    properties: {
+                                      noteId: { type: Type.STRING, description: "Published note id returned by searchPortalNotes." },
+                                    },
+                                    required: ["noteId"],
+                                  },
+                                },
+                                {
                                   name: "navigatePortal",
                                   description: "Navigate the current authenticated College Practical Portal to an existing page.",
                                   parameters: {
@@ -1517,8 +1542,8 @@ async function startServer() {
                                     properties: {
                                       target: {
                                         type: Type.STRING,
-                                        description: "Existing portal destination: dashboard, practicals, academic-documents, subjects, bookmarks, profile, or back.",
-                                        enum: ["dashboard", "practicals", "academic-documents", "subjects", "bookmarks", "profile", "back"],
+                                        description: "Existing portal destination: dashboard, practicals, academic-documents, notes, subjects, bookmarks, profile, or back.",
+                                        enum: ["dashboard", "practicals", "academic-documents", "notes", "subjects", "bookmarks", "profile", "back"],
                                       },
                                     },
                                     required: ["target"],

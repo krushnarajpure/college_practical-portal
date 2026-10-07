@@ -12,6 +12,8 @@ import {
   listDashboardNotes,
   listStudentNotes,
   getStudentNote,
+  readStudentNoteTextForAssistant,
+  searchStudentNotesForAssistant,
   streamAdminNote,
   streamDashboardNote,
   streamStudentNote,
@@ -28,6 +30,8 @@ const router = express.Router();
 router.use(authenticateUser);
 router.get('/notes', requireRole('student'), listStudentNotes);
 router.get('/student/notes', requireRole('student'), listStudentNotes);
+router.get('/student/notes/assistant/search', requireRole('student'), searchStudentNotesForAssistant);
+router.get('/student/notes/:noteId/text', requireRole('student'), readStudentNoteTextForAssistant);
 router.get('/student/notes/:noteId', requireRole('student'), getStudentNote);
 router.get('/student/notes/:noteId/view', requireRole('student'), streamStudentNote);
 router.get('/dashboard/notes', requireRole('student', 'teacher'), listDashboardNotes);

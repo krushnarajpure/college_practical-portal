@@ -33,7 +33,12 @@ export default function MyraaIntegrated() {
       const practical = response?.data?.practical;
       if (!practical?.pdfId) throw new Error('This practical has no attached PDF.');
       return api.get(`/pdfs/${practical.pdfId}/text`);
-    }
+    },
+    searchNotes: async ({ query = '' }) => {
+      const response = await api.get('/student/notes/assistant/search', { q: query });
+      return response?.data || { notes: [] };
+    },
+    readNotePdf: async ({ noteId }) => api.get(`/student/notes/${noteId}/text`, undefined, 120000)
   };
 
   useEffect(() => {
@@ -53,6 +58,7 @@ export default function MyraaIntegrated() {
       dashboard: '/student/dashboard',
       practicals: '/student/practicals',
       'academic-documents': '/student/academic-documents',
+      notes: '/student/notes',
       subjects: '/student/subjects',
       bookmarks: '/student/bookmarks',
       profile: '/student/profile'

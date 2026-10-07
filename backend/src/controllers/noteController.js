@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import path from 'path';
+import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import Note from '../models/Note.js';
 import NoteFolder from '../models/NoteFolder.js';
 import { getAcademicNoteBucket } from '../config/storage.js';
@@ -382,6 +383,127 @@ export const getStudentNote = async (req, res, next) => {
     return res.status(200).json(successResponse('Note retrieved.', { note: sanitizeNote(note) }));
   } catch (error) {
     next(error);
+  }
+};
+
+export const searchStudentNotesForAssistant = async (req, res, next) => {
+  try {
+    const query = String(req.query?.q || '').trim().slice(0, 100);
+    if (!query) return res.status(400).json(errorResponse('Enter a note title, subject, or topic to search.', 'Bad Request', 400));
+    const expression = new RegExp(escapeRegex(query), 'i');
+    const notes = await Note.find({
+      isActive: true,
+      isDeleted: { $ne: true },
+      $or: [{ isPublic: true }, { isPublic: { $exists: false } }],
+      $and: [{
+        $or: [
+          { title: expression },
+          { customTitle: expression },
+          { originalName: expression },
+          { category: expression },
+          { folderPath: expression },
+          { description: expression }
+        ]
+      }]
+    })
+      .select('title customTitle originalName fileType mimeType storageType size category folderPath description createdAt')
+      .sort({ updatedAt: -1 })
+      .limit(20)
+      .lean();
+    return res.status(200).json(successResponse('Published notes search completed.', {
+      notes: notes.map((note) => ({
+        id: String(note._id),
+        title: note.customTitle || note.title || note.originalName,
+        fileType: note.fileType,
+        mimeType: note.mimeType,
+        storageType: note.storageType,
+        size: note.size,
+        category: note.category,
+        folderPath: note.folderPath,
+        description: note.description,
+        createdAt: note.createdAt
+      }))
+    }));
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const readStudentNoteTextForAssistant = async (req, res, next) => {
+  let pdf;
+  try {
+    if (!isValidObjectId(req.params.noteId)) {
+      return res.status(400).json(errorResponse('Invalid note id.', 'Bad Request', 400));
+    }
+    const note = await Note.findOne({
+      _id: req.params.noteId,
+      isActive: true,
+      isDeleted: { $ne: true },
+      $or: [{ isPublic: true }, { isPublic: { $exists: false } }]
+    });
+    if (!note) return res.status(404).json(errorResponse('Note not found.', 'Not Found', 404));
+
+    const fileName = note.customTitle || note.title || note.originalName || 'Note';
+    if (note.storageType === 'driveLink') {
+      return res.status(422).json(errorResponse('This item is a Google Drive link, not a portal-stored PDF. Open the shared link to read it.', 'Unprocessable Entity', 422));
+    }
+    if (note.storageType === 'mongodb') {
+      const text = String(note.content || '').trim();
+      if (!text) return res.status(422).json(errorResponse('This note has no readable text content.', 'Unprocessable Entity', 422));
+      return res.status(200).json(successResponse('Published note text retrieved.', { fileName, pageCount: null, text: text.slice(0, 30000), truncated: text.length > 30000 }));
+    }
+
+    let buffer;
+    let mimeType = note.viewMimeType || note.mimeType || '';
+    if (note.storageType === 'gridfs') {
+      const chunks = [];
+      const stream = getAcademicNoteBucket().openDownloadStream(note.gridFsFileId);
+      for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+      buffer = Buffer.concat(chunks);
+    } else if (note.storageType === 'googleDrive') {
+      const result = await streamDriveFileContent(note);
+      buffer = result.buffer;
+      mimeType = result.mimeType || mimeType;
+    } else {
+      return res.status(422).json(errorResponse('This note uses an unsupported storage type for text reading.', 'Unprocessable Entity', 422));
+    }
+
+    if (note.fileType !== 'pdf' && mimeType !== 'application/pdf' && note.extension !== 'pdf') {
+      return res.status(422).json(errorResponse('This item is not a PDF note.', 'Unprocessable Entity', 422));
+    }
+    try {
+      pdf = await getDocument({ data: new Uint8Array(buffer), useSystemFonts: true }).promise;
+    } catch {
+      return res.status(422).json(errorResponse('This PDF could not be read. It may be scanned, encrypted, or damaged.', 'Unprocessable Entity', 422));
+    }
+
+    const pages = [];
+    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
+      const page = await pdf.getPage(pageNumber);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .filter((item) => 'str' in item && item.str.trim())
+        .map((item) => item.str.trim())
+        .join(' ');
+      if (pageText) pages.push(pageText);
+      page.cleanup();
+    }
+    const text = pages.join('\n\n');
+    if (!text.trim()) {
+      return res.status(422).json(errorResponse('This PDF has no selectable text. Scanned PDFs require OCR and cannot be read here.', 'Unprocessable Entity', 422));
+    }
+    return res.status(200).json(successResponse('Published PDF text extracted.', {
+      fileName,
+      pageCount: pdf.numPages,
+      text: text.slice(0, 30000),
+      truncated: text.length > 30000
+    }));
+  } catch (error) {
+    next(error);
+  } finally {
+    if (pdf) {
+      try { await pdf.destroy(); } catch { /* PDF cleanup is best-effort. */ }
+    }
   }
 };
 

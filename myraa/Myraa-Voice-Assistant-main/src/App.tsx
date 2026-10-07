@@ -48,6 +48,12 @@ interface PortalTools {
   readPracticalPdf: (args: { practicalId: string }) => Promise<{
     data?: { fileName: string; pageCount: number; text: string; truncated: boolean };
   }>;
+  searchNotes: (args: { query: string }) => Promise<{
+    notes: Array<{ id: string; title: string; fileType: string; mimeType: string; storageType: string; category?: string; folderPath?: string; description?: string }>;
+  }>;
+  readNotePdf: (args: { noteId: string }) => Promise<{
+    data?: { fileName: string; pageCount: number | null; text: string; truncated: boolean };
+  }>;
 }
 
 interface AppProps {
@@ -625,14 +631,28 @@ export default function App({ portalTools, onOpenPortalPractical, onNavigatePort
       onToolCall: (name, args, callback) => {
         console.log(`[App] Tool call triggered: ${name}`, args);
 
-        if (['listPortalPracticals', 'readPortalPracticalPdf', 'openPortalPracticalPdf', 'navigatePortal'].includes(name)) {
+        if (['listPortalPracticals', 'readPortalPracticalPdf', 'openPortalPracticalPdf', 'searchPortalNotes', 'readPortalNotePdf', 'navigatePortal'].includes(name)) {
           void (async () => {
             try {
-              if (!portalTools) throw new Error('Portal practical tools are available only inside the signed-in student website.');
+              if (!portalTools) throw new Error('Portal tools are available only inside the signed-in student website.');
               if (name === 'navigatePortal') {
                 if (!onNavigatePortal) throw new Error('Portal navigation is unavailable here.');
                 onNavigatePortal(String(args?.target || 'dashboard'));
                 callback({ result: `Opened ${String(args?.target || 'dashboard')} in the current College Practical Portal.` });
+                return;
+              }
+              if (name === 'searchPortalNotes') {
+                const result = await portalTools.searchNotes({ query: String(args?.query || '') });
+                callback({ result: JSON.stringify(result) });
+                return;
+              }
+              if (name === 'readPortalNotePdf') {
+                const noteId = String(args?.noteId || '');
+                if (!noteId) throw new Error('Choose a published note from searchPortalNotes first.');
+                const response = await portalTools.readNotePdf({ noteId });
+                const note = response?.data;
+                if (!note?.text) throw new Error('No readable note text was returned.');
+                callback({ result: JSON.stringify({ fileName: note.fileName, pageCount: note.pageCount, truncated: note.truncated, text: note.text }) });
                 return;
               }
               if (name === 'listPortalPracticals') {
