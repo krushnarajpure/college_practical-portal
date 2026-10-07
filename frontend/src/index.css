@@ -7295,6 +7295,101 @@ body {
   gap: 5px;
 }
 
+.admin-note-create-form {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px;
+}
+
+.dashboard-shared-notes {
+  margin-top: 18px;
+}
+
+.dashboard-note-list {
+  display: grid;
+  gap: 5px;
+}
+
+.dashboard-note-row {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 4px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.dashboard-note-row:disabled {
+  cursor: wait;
+  opacity: .7;
+}
+
+.dashboard-note-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.dashboard-note-copy strong,
+.dashboard-note-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-note-copy strong {
+  color: var(--ink-strong);
+  font-size: 12px;
+}
+
+.dashboard-note-copy small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.admin-note-folder-open {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.admin-note-folder-open strong {
+  color: var(--ink-strong);
+  font-size: 12px;
+}
+
+.admin-note-folder-open small {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.admin-note-move-select {
+  min-width: 88px;
+  max-width: 130px;
+  min-height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 10px;
+}
+
 .admin-note-deleted {
   opacity: .7;
 }

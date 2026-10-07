@@ -24,8 +24,6 @@ services:
         sync: false
       - key: GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
         sync: false
-      - key: MONGODB_STORAGE_LIMIT_MB
-        value: "512"
   - type: web
     name: college-practical-portal-myraa
     runtime: node

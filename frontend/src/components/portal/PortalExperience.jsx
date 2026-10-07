@@ -1,16 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, BookOpen, Bookmark, Database, Eye, EyeOff, HardDrive,
   Building2, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
-  Clock3, Download, FilePlus2, FileText, Filter, GraduationCap, LayoutDashboard,
+  Clock3, Download, ExternalLink, FilePlus2, FileText, Filter, GraduationCap, LayoutDashboard,
   Notebook,  LoaderCircle, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Settings, ShieldCheck,
-  Folder, FolderOpen, Instagram, Maximize2, Minimize2, RefreshCw, Save, Sparkles, Trash2, Users, X
+  Folder, FolderOpen, FolderPlus, Instagram, Link2, Maximize2, Minimize2, RefreshCw, Save, Sparkles, Trash2, Upload, Users, X
 } from 'lucide-react';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useAuth } from '../../context/AuthContext';
 import { notifications } from '../../data/portalData';
-import api from '../../services/api';
+import api, { API_BASE_URL } from '../../services/api';
 import departmentService from '../../services/departmentService';
 import yearService from '../../services/yearService';
 import semesterService from '../../services/semesterService';
@@ -26,9 +26,9 @@ import TeacherPracticalModal from './TeacherPracticalModal';
 import TeacherSubjectModal from './TeacherSubjectModal';
 import WorkspaceLoading from '../common/WorkspaceLoading';
 import ThemeToggle from '../common/ThemeToggle';
-import MyraaIntegrated from '../../features/myraa/MyraaIntegrated';
 import StudentPlanner from './StudentPlanner';
 
+const MyraaIntegrated = lazy(() => import('../../features/myraa/MyraaIntegrated'));
 const roleHome = { admin: '/admin/dashboard', teacher: '/teacher/dashboard', student: '/student/dashboard' };
 const roleNames = { admin: 'Administrator', teacher: 'Teacher', student: 'Student' };
 const number = (value) => String(value).padStart(2, '0');
@@ -217,6 +217,84 @@ function normalizePracticalFromApi(practical) {
   };
 }
 
+function DashboardSharedNotes({ role }) {
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [openingId, setOpeningId] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const loadNotes = async () => {
+      try {
+        const response = await api.get('/dashboard/notes');
+        if (!active) return;
+        setNotes(response?.data?.notes || []);
+        setError('');
+      } catch (loadError) {
+        if (!active) return;
+        setError(loadError.message || 'Unable to load shared notes.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    void loadNotes();
+    const interval = window.setInterval(loadNotes, 30000);
+    window.addEventListener('focus', loadNotes);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', loadNotes);
+    };
+  }, [reloadKey]);
+
+  const openNote = async (note) => {
+    if (note.storageType === 'driveLink' && note.driveUrl) {
+      window.open(note.driveUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      setError('Allow pop-ups to open this note.');
+      return;
+    }
+    tab.opener = null;
+    setOpeningId(note.id);
+    setError('');
+    try {
+      const blob = await api.getBlob(`/dashboard/notes/${note.id}/view`, { timeoutMs: 120000 });
+      const objectUrl = URL.createObjectURL(blob);
+      tab.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    } catch (openError) {
+      tab.close();
+      setError(openError.message || 'Unable to open this note.');
+    } finally {
+      setOpeningId('');
+    }
+  };
+
+  return <section className="surface dashboard-panel dashboard-shared-notes">
+    <div className="panel-heading">
+      <div><p className="eyebrow">SHARED LEARNING MATERIAL</p><h2>Latest notes</h2></div>
+      {role === 'student' && <Link className="text-link" to="/student/notes">All notes <ArrowRight size={14} /></Link>}
+    </div>
+    {loading ? <p className="planner-caption">Loading shared notes...</p>
+      : error && !notes.length ? <div><p className="planner-error" role="alert">{error}</p><Button variant="quiet" onClick={() => setReloadKey((key) => key + 1)}>Retry</Button></div>
+        : notes.length ? <div className="dashboard-note-list">{notes.slice(0, 4).map((note) => (
+          <button type="button" className="dashboard-note-row" key={note.id} onClick={() => openNote(note)} disabled={openingId === note.id}>
+            <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}>{note.storageType === 'driveLink' ? <Link2 size={17} /> : <FileText size={17} />}</span>
+            <span className="dashboard-note-copy"><strong>{note.title || 'Untitled note'}</strong><small>{note.category || note.folderPath || 'Shared notes'} · {note.storageType === 'driveLink' ? 'Google Drive link' : (note.extension || note.fileType || 'file').toUpperCase()}</small></span>
+            {openingId === note.id ? <LoaderCircle size={16} className="workspace-loading-spinner" /> : <ArrowRight size={15} />}
+          </button>
+        ))}</div>
+          : <EmptyState title="No shared notes yet" text="Notes published by the administrator will appear here." icon={Notebook} />}
+    {error && notes.length > 0 && <p className="planner-error" role="alert">{error}</p>}
+  </section>;
+}
+
 function StudentDashboard({ user, practicalList, bookmarkedIds, subjectList = [], completedIds = [], progressRecords = [], notify }) {
   const navigate = useNavigate();
   const studentSubjects = subjectList.map(normalizeSubjectFromApi).filter(Boolean);
@@ -230,6 +308,7 @@ function StudentDashboard({ user, practicalList, bookmarkedIds, subjectList = []
     {studentSubjects.length ? <div className="subject-grid">{studentSubjects.slice(0, 3).map((subject) => { const items = studentPracticals.filter((item) => item.subjectId === subject.id); return <SubjectTile key={subject.id} subject={subject} items={items} completedCount={items.filter((item) => completedIds.includes(String(item.id))).length} />; })}</div> : <EmptyState title="No subjects assigned" text="No subjects are assigned to your department, year and semester yet." />}
     <div className="section-heading section-heading-spaced"><div><p className="eyebrow">PICK UP WHERE YOU LEFT OFF</p><h2>Recently available</h2></div><Link className="text-link" to="/student/practicals">All practicals <ArrowRight size={15} /></Link></div>
     <section className="surface practical-list">{studentPracticals.slice(0, 4).map((item) => <PracticalRow key={item.id} practical={item} subject={studentSubjects.find((entry) => entry.id === item.subjectId)} completed={completedIds.includes(String(item.id))} onOpen={(practical) => navigate(`/student/practicals/${practical.id}`)} />)}</section>
+    <DashboardSharedNotes role="student" />
   </>;
 }
 
@@ -532,7 +611,7 @@ function NotesPage() {
     <section className="notes-grid" aria-label="Drive folders and notes">
       {notes.length === 0 ? <EmptyState title="No notes available." text={syncWarning ? 'No notes are stored in the portal yet. Check Drive sharing and retry.' : 'No study notes have been synced yet.'} icon={Notebook} /> : totalVisibleItems ? <>
         {visibleFolders.map((folder) => (
-          <button className="notes-folder-card" type="button" key={JSON.stringify(folder.path)} onClick={() => setOpenFolder(folder.path)}>
+          <button className="notes-folder-card" type="button" key={JSON.stringify(folder.path)} onClick={() => { setOpenFolder(folder.path); setSearch(''); }}>
             <span className="notes-folder-icon"><Folder size={23} /></span>
             <span className="notes-folder-details"><strong>{folder.name}</strong><small>{folder.count} {folder.count === 1 ? 'note' : 'notes'} inside</small></span>
             <ChevronRight size={18} className="notes-folder-arrow" />
@@ -541,7 +620,7 @@ function NotesPage() {
         {visibleNotes.map((note) => (
         <article className="notes-card" key={note.id || note._id}>
           <div className="notes-card-top">
-            <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}><FileText size={20} /></span>
+            <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}>{note.storageType === 'driveLink' ? <Link2 size={20} /> : <FileText size={20} />}</span>
             <span className="notes-card-type">{(note.extension || note.fileType || 'FILE').toString().toUpperCase()}</span>
           </div>
           <span className="notes-card-category">{note.category || 'General'}</span>
@@ -549,9 +628,11 @@ function NotesPage() {
           <p className="notes-card-folder" title={note.folderPath || 'Shared notes'}>{note.folderPath || 'Shared notes'}</p>
           <div className="notes-card-footer">
             <span>{note.size ? `${(Number(note.size) / (1024 * 1024)).toFixed(1)} MB` : note.fileType || 'Learning resource'}</span>
-            <Button variant="secondary" onClick={() => setPreviewNote(note)} aria-label={`View ${note.title || 'note'}`}>
-              View note <ArrowRight size={15} />
-            </Button>
+            {note.storageType === 'driveLink' && note.driveUrl
+              ? <a className="button button-secondary" href={note.driveUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${note.title || 'Google Drive note'}`}>Open Drive <ExternalLink size={15} /></a>
+              : <Button variant="secondary" onClick={() => setPreviewNote(note)} aria-label={`View ${note.title || 'note'}`}>
+                View note <ArrowRight size={15} />
+              </Button>}
           </div>
         </article>
         ))}
@@ -862,25 +943,43 @@ function formatBytes(bytes) {
 
 function AdminNotesPage({ notify }) {
   const [notes, setNotes] = useState([]);
+  const [folders, setFolders] = useState([]);
   const [stats, setStats] = useState(null);
   const [storage, setStorage] = useState(null);
   const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState('all');
+  const [sortOrder, setSortOrder] = useState('newest');
+  const [currentFolderId, setCurrentFolderId] = useState('root');
   const [editingId, setEditingId] = useState('');
   const [editedTitle, setEditedTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [formMode, setFormMode] = useState('');
+  const [formBusy, setFormBusy] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(null);
+  const [newVisible, setNewVisible] = useState(true);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [newFileName, setNewFileName] = useState('');
+  const [newFileType, setNewFileType] = useState('markdown');
+  const [newFileContent, setNewFileContent] = useState('');
+  const [driveLinkTitle, setDriveLinkTitle] = useState('');
+  const [driveLinkUrl, setDriveLinkUrl] = useState('');
+  const [driveLinkDescription, setDriveLinkDescription] = useState('');
+  const [formFolderId, setFormFolderId] = useState('');
   const [error, setError] = useState('');
   const [storageError, setStorageError] = useState('');
+  const uploadInputRef = useRef(null);
 
   const loadData = async () => {
     setError('');
     const [notesResult, storageResult] = await Promise.allSettled([
-      api.get('/admin/notes'),
+      api.get('/admin/notes', { folderId: 'all' }),
       api.get('/admin/storage')
     ]);
     if (notesResult.status === 'rejected') throw notesResult.reason;
     setNotes(notesResult.value?.data?.notes || []);
+    setFolders(notesResult.value?.data?.folders || []);
     setStats(notesResult.value?.data?.stats || null);
     if (storageResult.status === 'fulfilled') {
       setStorage(storageResult.value?.data || null);
@@ -893,11 +992,12 @@ function AdminNotesPage({ notify }) {
 
   useEffect(() => {
     let active = true;
-    Promise.allSettled([api.get('/admin/notes'), api.get('/admin/storage')])
+    Promise.allSettled([api.get('/admin/notes', { folderId: 'all' }), api.get('/admin/storage')])
       .then(([notesResult, storageResult]) => {
         if (!active) return;
         if (notesResult.status === 'rejected') throw notesResult.reason;
         setNotes(notesResult.value?.data?.notes || []);
+        setFolders(notesResult.value?.data?.folders || []);
         setStats(notesResult.value?.data?.stats || null);
         if (storageResult.status === 'fulfilled') {
           setStorage(storageResult.value?.data || null);
@@ -916,7 +1016,199 @@ function AdminNotesPage({ notify }) {
     return () => { active = false; };
   }, []);
 
-  const filteredNotes = notes.filter((note) => `${note.title} ${note.category} ${note.folderPath}`.toLowerCase().includes(search.trim().toLowerCase()));
+  const normalizedSearch = search.trim().toLowerCase();
+  const currentFolder = folders.find((folder) => folder.id === currentFolderId);
+  const childFolders = folders
+    .filter((folder) => normalizedSearch || folder.parentId === (currentFolderId === 'root' ? null : currentFolderId))
+    .filter((folder) => !normalizedSearch || `${folder.name} ${folder.path}`.toLowerCase().includes(normalizedSearch))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  const filteredNotes = notes
+    .filter((note) => normalizedSearch
+      ? `${note.title} ${note.originalName} ${note.category} ${note.folderPath} ${note.extension} ${note.fileType} ${note.mimeType}`.toLowerCase().includes(normalizedSearch)
+      : currentFolderId === 'root' ? !note.folderId : note.folderId === currentFolderId)
+    .filter((note) => {
+      if (typeFilter === 'pdf') return note.fileType === 'pdf';
+      if (typeFilter === 'created') return note.storageType === 'mongodb';
+      if (typeFilter === 'driveLink') return note.storageType === 'driveLink';
+      if (typeFilter === 'folder') return false;
+      return true;
+    })
+    .sort((left, right) => {
+      const leftCreated = left.driveCreatedAt || left.createdAt || 0;
+      const rightCreated = right.driveCreatedAt || right.createdAt || 0;
+      if (sortOrder === 'oldest') return new Date(leftCreated) - new Date(rightCreated);
+      if (sortOrder === 'name') return String(left.title || '').localeCompare(String(right.title || ''));
+      if (sortOrder === 'size') return Number(right.size || 0) - Number(left.size || 0);
+      return new Date(rightCreated) - new Date(leftCreated);
+    });
+
+  const closeForm = () => {
+    setFormMode('');
+    setNewFolderName('');
+    setNewFileName('');
+    setNewFileContent('');
+    setDriveLinkTitle('');
+    setDriveLinkUrl('');
+    setDriveLinkDescription('');
+    setNewVisible(true);
+    setFormFolderId(currentFolderId === 'root' ? '' : currentFolderId);
+  };
+
+  const submitForm = async (event) => {
+    event.preventDefault();
+    setFormBusy(true);
+    try {
+      if (formMode === 'folder') {
+        await api.post('/admin/folders', {
+          name: newFolderName,
+          parentId: formFolderId || null
+        });
+        notify('Folder created.');
+      } else if (formMode === 'file') {
+        await api.post('/admin/notes/files', {
+          title: newFileName,
+          fileType: newFileType,
+          content: newFileContent,
+          folderId: formFolderId || null,
+          isPublic: newVisible
+        });
+        notify('File created.');
+      } else if (formMode === 'link') {
+        await api.post('/admin/notes/drive-link', {
+          title: driveLinkTitle,
+          driveUrl: driveLinkUrl,
+          description: driveLinkDescription,
+          folderId: formFolderId || null,
+          isPublic: newVisible
+        });
+        notify('Google Drive link added.');
+      }
+      closeForm();
+      await loadData();
+    } catch (formError) {
+      notify(formError.message || 'Unable to save this item.');
+    } finally {
+      setFormBusy(false);
+    }
+  };
+
+  const uploadPdf = (file) => new Promise((resolve, reject) => {
+    const requestUrl = `${API_BASE_URL}/admin/notes/upload`;
+    if (!API_BASE_URL) {
+      reject(new Error('Portal API is not configured. Set VITE_API_URL and redeploy.'));
+      return;
+    }
+    const formData = new FormData();
+    formData.append('pdf', file);
+    formData.append('folderId', formFolderId || (currentFolderId === 'root' ? '' : currentFolderId));
+    formData.append('isPublic', String(newVisible));
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', requestUrl);
+    xhr.withCredentials = true;
+    xhr.timeout = 120000;
+    const token = localStorage.getItem('college_practical_token');
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) setUploadProgress(Math.round((event.loaded / event.total) * 100));
+    };
+    xhr.onerror = () => reject(new Error('Network error while uploading the PDF.'));
+    xhr.ontimeout = () => reject(new Error('PDF upload timed out. Please try again.'));
+    xhr.onload = () => {
+      let payload;
+      try {
+        payload = JSON.parse(xhr.responseText);
+      } catch {
+        reject(new Error('The server returned an invalid upload response.'));
+        return;
+      }
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new Error(payload.message || payload.error || `Upload failed with HTTP ${xhr.status}.`));
+        return;
+      }
+      resolve(payload);
+    };
+    xhr.send(formData);
+  });
+
+  const handlePdfSelection = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    const limit = Number(storage?.uploadLimitBytes || 25 * 1024 * 1024);
+    if (file.type !== 'application/pdf' || !file.name.toLowerCase().endsWith('.pdf')) {
+      notify('Choose a PDF file.');
+      return;
+    }
+    if (file.size > limit) {
+      notify(`This PDF exceeds the ${formatBytes(limit)} upload limit.`);
+      return;
+    }
+    setUploadProgress(0);
+    try {
+      await uploadPdf(file);
+      notify('PDF uploaded to MongoDB GridFS.');
+      await loadData();
+    } catch (uploadError) {
+      notify(uploadError.message || 'Unable to upload this PDF.');
+    } finally {
+      setUploadProgress(null);
+    }
+  };
+
+  const openNote = async (note) => {
+    const tab = window.open('', '_blank');
+    if (!tab) {
+      notify('Allow pop-ups to open this file.');
+      return;
+    }
+    tab.opener = null;
+    try {
+      if (note.storageType === 'driveLink') {
+        tab.location.href = note.driveUrl;
+        return;
+      }
+      const blob = await api.getBlob(`/admin/notes/${note.id}/view`, { timeoutMs: 120000 });
+      const objectUrl = URL.createObjectURL(blob);
+      tab.location.href = objectUrl;
+      window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    } catch (openError) {
+      tab.close();
+      notify(openError.message || 'Unable to open this file.');
+    }
+  };
+
+  const downloadNote = async (note) => {
+    try {
+      const blob = await api.getBlob(`/admin/notes/${note.id}/download`, { timeoutMs: 120000 });
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = objectUrl;
+      link.download = note.title || note.originalName || 'download';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (downloadError) {
+      notify(downloadError.message || 'Unable to download this file.');
+    }
+  };
+
+  const copyNoteLink = async (note) => {
+    const link = note.storageType === 'driveLink'
+      ? note.driveUrl
+      : new URL(`/api/admin/notes/${note.id}/view`, API_BASE_URL || window.location.origin).toString();
+    try {
+      await navigator.clipboard.writeText(link);
+      notify('Link copied.');
+    } catch {
+      notify('Could not copy the link. Check browser clipboard permissions.');
+    }
+  };
+
+  const moveNote = async (note, folderId) => {
+    await updateNote(note, { folderId: folderId === 'root' ? null : folderId || null });
+  };
 
   const syncNotes = async () => {
     setSyncing(true);
@@ -948,15 +1240,45 @@ function AdminNotesPage({ notify }) {
   };
 
   const deleteNote = async (note) => {
-    if (!window.confirm(`Remove "${note.title}" from the student portal? It will remain in Google Drive.`)) return;
+    if (!window.confirm(`Delete "${note.title}"? Uploaded files and created notes will be deleted; Google Drive originals remain unchanged.`)) return;
     const id = String(note._id || note.id);
     setBusyId(id);
     try {
       await api.del(`/admin/notes/${id}`);
       await loadData();
-      notify('Note removed from the portal.');
+      notify('File deleted.');
     } catch (deleteError) {
       notify(deleteError.message || 'Unable to remove this note.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const renameFolder = async (folder) => {
+    const name = window.prompt('Rename folder', folder.name);
+    if (name === null || !name.trim() || name.trim() === folder.name) return;
+    setBusyId(folder.id);
+    try {
+      await api.put(`/admin/folders/${folder.id}`, { name: name.trim() });
+      await loadData();
+      notify('Folder renamed.');
+    } catch (folderError) {
+      notify(folderError.message || 'Unable to rename folder.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const deleteFolder = async (folder) => {
+    if (!window.confirm(`Delete the empty folder "${folder.name}"?`)) return;
+    setBusyId(folder.id);
+    try {
+      await api.del(`/admin/folders/${folder.id}`);
+      if (currentFolderId === folder.id) setCurrentFolderId(folder.parentId || 'root');
+      await loadData();
+      notify('Folder deleted.');
+    } catch (folderError) {
+      notify(folderError.message || 'Move or delete the folder contents first.');
     } finally {
       setBusyId('');
     }
@@ -967,43 +1289,96 @@ function AdminNotesPage({ notify }) {
 
   const mongoUsage = storage?.usagePercent;
   const storageProgress = Number.isFinite(mongoUsage) ? Math.min(mongoUsage, 100) : 0;
+  const uploadButtonDisabled = uploadProgress !== null;
+  const fileFormVisible = ['file', 'link', 'folder'].includes(formMode);
 
   return <>
-    <PageHeading eyebrow="CONTENT & STORAGE" title="Notes administration" description="Choose which Drive notes students can see, rename them, or remove them from the portal." actions={<Button icon={RefreshCw} disabled={syncing} onClick={syncNotes}>{syncing ? 'Syncing Drive...' : 'Sync Google Drive'}</Button>} />
+    <PageHeading eyebrow="CONTENT & STORAGE" title="Notes administration" description="Manage academic files, folders, student visibility, and Google Drive resources." actions={<>
+      <Button icon={Upload} disabled={uploadButtonDisabled} onClick={() => { setFormFolderId(currentFolderId === 'root' ? '' : currentFolderId); uploadInputRef.current?.click(); }}>{uploadProgress === null ? 'Upload PDF' : `Uploading ${uploadProgress}%`}</Button>
+      <input ref={uploadInputRef} type="file" accept=".pdf,application/pdf" hidden onChange={handlePdfSelection} />
+      <Button variant="secondary" icon={FolderPlus} onClick={() => { setFormMode('folder'); setFormFolderId(currentFolderId === 'root' ? '' : currentFolderId); }}>Create Folder</Button>
+      <Button variant="secondary" icon={FilePlus2} onClick={() => { setFormMode('file'); setFormFolderId(currentFolderId === 'root' ? '' : currentFolderId); }}>Create File</Button>
+      <Button variant="secondary" icon={Link2} onClick={() => { setFormMode('link'); setFormFolderId(currentFolderId === 'root' ? '' : currentFolderId); }}>Add Drive Link</Button>
+      <Button variant="quiet" icon={RefreshCw} disabled={syncing} onClick={syncNotes}>{syncing ? 'Syncing Drive...' : 'Sync Google Drive'}</Button>
+    </>} />
+    {uploadProgress !== null && <div className="surface" role="status" style={{ padding: '12px', marginBottom: '12px' }}>
+      <strong>Uploading PDF to MongoDB GridFS: {uploadProgress}%</strong>
+      <div className="progress-track goal-progress-track"><span style={{ width: `${uploadProgress}%` }} /></div>
+    </div>}
+    {fileFormVisible && <form className="surface admin-note-create-form" onSubmit={submitForm}>
+      <div className="panel-heading"><div><p className="eyebrow">NEW ACADEMIC ITEM</p><h2>{formMode === 'folder' ? 'Create folder' : formMode === 'file' ? 'Create text or Markdown file' : 'Add Google Drive link'}</h2></div></div>
+      {formMode === 'folder' ? <label className="form-field"><span>Folder name</span><input value={newFolderName} maxLength={200} required onChange={(event) => setNewFolderName(event.target.value)} placeholder="e.g. Data Structures" /></label> : <>
+        <label className="form-field"><span>{formMode === 'file' ? 'File name' : 'Document name'}</span><input value={formMode === 'file' ? newFileName : driveLinkTitle} maxLength={500} required onChange={(event) => formMode === 'file' ? setNewFileName(event.target.value) : setDriveLinkTitle(event.target.value)} placeholder={formMode === 'file' ? 'e.g. Java practical notes' : 'e.g. Java Notes'} /></label>
+        {formMode === 'file' ? <>
+          <label className="form-field"><span>File format</span><select value={newFileType} onChange={(event) => setNewFileType(event.target.value)}><option value="markdown">Markdown (.md)</option><option value="text">Plain text (.txt)</option></select></label>
+          <label className="form-field"><span>Content</span><textarea value={newFileContent} required rows={6} maxLength={1000000} onChange={(event) => setNewFileContent(event.target.value)} placeholder="Write the note content here (up to 1 MB)." /></label>
+        </> : <>
+          <label className="form-field"><span>Google Drive URL</span><input type="url" value={driveLinkUrl} required onChange={(event) => setDriveLinkUrl(event.target.value)} placeholder="https://drive.google.com/..." /></label>
+          <label className="form-field"><span>Description (optional)</span><textarea value={driveLinkDescription} rows={3} maxLength={5000} onChange={(event) => setDriveLinkDescription(event.target.value)} /></label>
+        </>}
+        <label className="setting-toggle"><span><strong>Visible to students</strong><small>Students can open this item in the Notes page.</small></span><input type="checkbox" checked={newVisible} onChange={() => setNewVisible((visible) => !visible)} /></label>
+      </>}
+      {formMode !== 'folder' && <label className="form-field"><span>Folder / category</span><select value={formFolderId} onChange={(event) => setFormFolderId(event.target.value)}><option value="">Root folder</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.path}</option>)}</select></label>}
+      <div className="heading-actions"><Button disabled={formBusy}>{formBusy ? 'Saving...' : formMode === 'folder' ? 'Create Folder' : 'Save'}</Button><Button type="button" variant="quiet" disabled={formBusy} onClick={closeForm}>Cancel</Button></div>
+    </form>}
     <section className="admin-storage-grid" aria-label="MongoDB storage usage">
       <article className="surface admin-storage-card">
-        <div className="study-planner-heading"><span className="planner-icon"><Database size={18} /></span><div><p className="eyebrow">MONGODB DATABASE</p><h2>{storage?.databaseName || 'Storage usage'}</h2></div></div>
-        <div className="admin-storage-values"><span><strong>{formatBytes(storage?.usedBytes)}</strong><small>Used</small></span><span><strong>{storage?.limitBytes ? formatBytes(storage.limitBytes) : 'Not configured'}</strong><small>{storage?.quotaSource === 'configured' ? 'Configured limit' : 'Estimated limit'}</small></span><span><strong>{storage?.remainingBytes === null || storage?.remainingBytes === undefined ? '—' : formatBytes(storage.remainingBytes)}</strong><small>Remaining</small></span></div>
+        <div className="study-planner-heading"><span className="planner-icon"><Database size={18} /></span><div><p className="eyebrow">MONGODB DATABASE</p><h2>{storage?.databaseName || 'Database information unavailable'}</h2></div></div>
+        <div className="admin-storage-values"><span><strong>{formatBytes(storage?.usedBytes)}</strong><small>Database storage used</small></span><span><strong>{storage ? storage.limitBytes ? formatBytes(storage.limitBytes) : 'Not configured' : 'Unavailable'}</strong><small>Application storage limit</small></span><span><strong>{storage ? storage.remainingBytes === null || storage.remainingBytes === undefined ? 'Not configured' : formatBytes(storage.remainingBytes) : 'Unavailable'}</strong><small>Remaining to configured limit</small></span></div>
+        <div className="admin-storage-values"><span><strong>{stats?.totalNotes ?? '—'}</strong><small>Stored note records</small></span><span><strong>{storage?.gridFs?.totalFiles ?? '—'}</strong><small>GridFS stored files</small></span><span><strong>{formatBytes(storage?.gridFs?.totalBytes)}</strong><small>GridFS file data</small></span></div>
         <div className="progress-track goal-progress-track"><span style={{ width: `${storageProgress}%` }} /></div>
-        <p className={storageError ? 'planner-error' : 'planner-caption'} role={storageError ? 'alert' : undefined}>{storageError || (storage?.quotaSource === 'configured' ? `${mongoUsage}% of the configured quota.` : `Estimated against the 512 MB default (${mongoUsage}%). Set MONGODB_STORAGE_LIMIT_MB to match your actual cluster plan.`)}</p>
+        <p className={storageError ? 'planner-error' : 'planner-caption'} role={storageError ? 'alert' : undefined}>{storageError || (storage?.quotaSource === 'configured' ? `${mongoUsage}% of the administrator-configured application limit. This is not an Atlas plan quota.` : 'Storage usage is read from MongoDB. Atlas plan capacity is not exposed by MongoDB database statistics; set MONGODB_STORAGE_LIMIT_MB to show an application limit.')}</p>
       </article>
       <article className="surface admin-storage-card">
-        <div className="study-planner-heading"><span className="planner-icon planner-icon-amber"><HardDrive size={18} /></span><div><p className="eyebrow">GOOGLE DRIVE NOTES</p><h2>Synced content</h2></div></div>
-        <div className="admin-storage-values"><span><strong>{stats?.totalNotes ?? 0}</strong><small>MongoDB note records</small></span><span><strong>{stats?.publicNotes ?? 0}</strong><small>Visible to students</small></span><span><strong>{formatBytes(stats?.googleDriveBytes)}</strong><small>Drive file size</small></span></div>
-        <p className="planner-caption">Note documents are in Google Drive; MongoDB stores their metadata. GridFS usage: {formatBytes(Object.values(storage?.gridFs || {}).reduce((total, item) => total + Number(item.bytes || 0), 0))} across photos and uploaded documents.</p>
+        <div className="study-planner-heading"><span className="planner-icon planner-icon-amber"><HardDrive size={18} /></span><div><p className="eyebrow">MONGODB FILE STORAGE</p><h2>GridFS buckets</h2></div></div>
+        <div className="admin-storage-values"><span><strong>{storage?.gridFs?.academicNotes?.files ?? '—'}</strong><small>Notes PDFs</small></span><span><strong>{formatBytes(storage?.gridFs?.academicNotes?.bytes)}</strong><small>Notes PDF data</small></span><span><strong>{stats?.publicNotes ?? '—'}</strong><small>Visible note items</small></span></div>
+        <p className="planner-caption">Uploaded PDFs use the academicNotes GridFS bucket. Note metadata and small text files use MongoDB documents. Google Drive links store metadata only; synced Drive files stay in Drive. Database used storage includes MongoDB collection and index allocation.</p>
       </article>
     </section>
-    <div className="table-toolbar"><label className="field-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes, folders or categories" /></label><span className="muted-inline">{filteredNotes.length} notes</span></div>
+    <div className="table-toolbar">
+      <label className="field-search"><Search size={16} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name, folder, category or file type" /></label>
+      <label className="notes-control"><span className="notes-sort-label">Type</span><select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)} aria-label="Filter note type"><option value="all">All types</option><option value="pdf">PDF</option><option value="created">Created File</option><option value="driveLink">Google Drive Link</option><option value="folder">Folder</option></select></label>
+      <label className="notes-control"><span className="notes-sort-label">Sort</span><select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} aria-label="Sort notes"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="name">Name</option><option value="size">File size</option></select></label>
+      <span className="muted-inline">{filteredNotes.length + childFolders.length} items</span>
+    </div>
+    <div className="table-toolbar">
+      <Button variant="quiet" icon={ArrowLeft} disabled={currentFolderId === 'root'} onClick={() => { setCurrentFolderId(currentFolder?.parentId || 'root'); setSearch(''); }}>Back</Button>
+      <span className="muted-inline">Folder: {currentFolder?.path || 'Root'}</span>
+      {currentFolderId !== 'root' && <Button variant="quiet" onClick={() => { setCurrentFolderId('root'); setSearch(''); }}>Root folder</Button>}
+    </div>
     <section className="admin-note-list" aria-label="Manage notes">
+      {typeFilter !== 'pdf' && typeFilter !== 'created' && typeFilter !== 'driveLink' && childFolders.map((folder) => <article className="surface admin-note-row" key={folder.id}>
+        <span className="notes-folder-icon"><Folder size={20} /></span>
+        <button type="button" className="admin-note-folder-open" onClick={() => { setCurrentFolderId(folder.id); setSearch(''); }}><strong>{folder.name}</strong><small>Folder · {folder.fileCount} files · {folder.path}</small></button>
+        <div className="admin-note-actions">
+          <button type="button" className="icon-button" title="Open folder" aria-label={`Open ${folder.name}`} onClick={() => { setCurrentFolderId(folder.id); setSearch(''); }}><ExternalLink size={16} /></button>
+          <button type="button" className="icon-button" title="Rename folder" aria-label={`Rename ${folder.name}`} disabled={busyId === folder.id} onClick={() => renameFolder(folder)}><Pencil size={16} /></button>
+          <button type="button" className="icon-button danger-action" title="Delete empty folder" aria-label={`Delete ${folder.name}`} disabled={busyId === folder.id} onClick={() => deleteFolder(folder)}><Trash2 size={16} /></button>
+        </div>
+      </article>)}
       {filteredNotes.map((note) => {
         const id = String(note._id || note.id);
         const visibleToStudents = note.isPublic === true || note.isPublic === undefined;
         const deleted = Boolean(note.isDeleted);
         return <article className={`surface admin-note-row ${deleted ? 'admin-note-deleted' : ''}`} key={id}>
-          <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}><FileText size={19} /></span>
+          <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}>{note.storageType === 'driveLink' ? <Link2 size={19} /> : <FileText size={19} />}</span>
           <div className="admin-note-copy">
             {editingId === id ? <form className="admin-note-rename" onSubmit={(event) => { event.preventDefault(); updateNote(note, { title: editedTitle }); }}><input autoFocus value={editedTitle} maxLength={500} onChange={(event) => setEditedTitle(event.target.value)} aria-label={`Rename ${note.title}`} /><Button variant="secondary" icon={Save} disabled={busyId === id}>Save</Button><Button type="button" variant="quiet" onClick={() => setEditingId('')}>Cancel</Button></form> : <strong>{note.title || 'Untitled note'}</strong>}
-            <small>{note.folderPath || note.category || 'Shared notes'} · {formatBytes(note.size)}</small>
-            <small>{deleted ? 'Removed from portal' : note.isActive === false ? 'Not currently in Drive' : visibleToStudents ? 'Visible to students' : 'Private to admin'}</small>
+            <small>Type: {note.storageType === 'gridfs' ? 'PDF' : note.storageType === 'mongodb' ? 'Created file' : note.storageType === 'driveLink' ? 'Google Drive link' : note.fileType || 'Drive file'} · Folder: {note.folderPath || note.category || 'Root'}</small>
+            <small>{note.size ? `Size: ${formatBytes(note.size)} · ` : ''}Created: {note.driveCreatedAt || note.createdAt ? new Date(note.driveCreatedAt || note.createdAt).toLocaleDateString() : '—'} · {deleted ? 'Removed from portal' : note.isActive === false ? 'Not currently in Drive' : visibleToStudents ? 'Visible to students' : 'Hidden from students'}</small>
           </div>
           {!deleted && note.isActive !== false && <div className="admin-note-actions">
+            <button type="button" className="icon-button" title={note.storageType === 'driveLink' ? 'Open Google Drive link' : 'Open or view file'} aria-label={`Open ${note.title}`} onClick={() => openNote(note)}><ExternalLink size={16} /></button>
+            {note.storageType !== 'driveLink' && <button type="button" className="icon-button" title="Download file" aria-label={`Download ${note.title}`} onClick={() => downloadNote(note)}><Download size={16} /></button>}
             <button type="button" className="icon-button" title="Rename note" aria-label={`Rename ${note.title}`} onClick={() => { setEditingId(id); setEditedTitle(note.title || ''); }}><Pencil size={16} /></button>
             <button type="button" className="icon-button" title={visibleToStudents ? 'Hide from students' : 'Publish to students'} aria-label={visibleToStudents ? 'Hide from students' : 'Publish to students'} disabled={busyId === id} onClick={() => updateNote(note, { isPublic: !visibleToStudents })}>{visibleToStudents ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-            <button type="button" className="icon-button danger-action" title="Remove from student portal" aria-label={`Delete ${note.title}`} disabled={busyId === id} onClick={() => deleteNote(note)}><Trash2 size={16} /></button>
+            <select className="admin-note-move-select" value="" aria-label={`Move ${note.title}`} disabled={busyId === id} onChange={(event) => moveNote(note, event.target.value)}><option value="">Move to...</option><option value="root">Root folder</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.path}</option>)}</select>
+            <button type="button" className="icon-button" title="Copy link" aria-label={`Copy link for ${note.title}`} onClick={() => copyNoteLink(note)}><Link2 size={16} /></button>
+            <button type="button" className="icon-button danger-action" title="Delete file" aria-label={`Delete ${note.title}`} disabled={busyId === id} onClick={() => deleteNote(note)}><Trash2 size={16} /></button>
           </div>}
         </article>;
       })}
-      {!filteredNotes.length && <EmptyState title="No notes found" text={search ? 'Try another search.' : 'Sync Google Drive to discover study notes.'} icon={Notebook} />}
+      {!filteredNotes.length && !childFolders.length && <EmptyState title="No notes found" text={search ? 'Try another search.' : currentFolderId === 'root' ? 'Upload a PDF, create a file or folder, add a Drive link, or sync Google Drive.' : 'This folder is empty.'} icon={Notebook} />}
     </section>
   </>;
 }
@@ -1094,7 +1469,7 @@ function AdminStudentDirectory() {
 }
 
 function MyraaPage() {
-  return <><PageHeading eyebrow="YOUR LEARNING COMPANION" title="Myraa voice assistant" description="Your existing Myraa assistant, connected to this student workspace." /><MyraaIntegrated /></>;
+  return <PageHeading eyebrow="YOUR LEARNING COMPANION" title="Myraa voice assistant" description="Your existing Myraa assistant, connected to this student workspace." />;
 }
 
 function ProfilePage({ user, role, notify }) {
@@ -1332,7 +1707,7 @@ function TeacherDashboard({ practicalList, user, subjectList = [] }) {
   const assignedSubjects = subjectList.map(normalizeSubjectFromApi).filter(Boolean);
   const subjects = assignedSubjects;
   const owned = practicalList.map(normalizePracticalFromApi).filter(Boolean);
-  return <><PageHeading eyebrow="FACULTY WORKSPACE" title={`Welcome, ${user?.name || 'Teacher'}`} description="Manage your course material and guide students through their practical work." actions={<Link to="/teacher/practicals/add" className="button button-primary"><Plus size={16} />Add practical</Link>} /><div className="stat-grid"><Stat label="Assigned subjects" value={assignedSubjects.length} note="Current assignments" icon={BookOpen} /><Stat label="Total practicals" value={owned.length} note="Across your subjects" icon={ClipboardList} tone="green" /><Stat label="Published" value={owned.filter((item) => item.published).length} note="Visible to students" icon={CheckCircle2} tone="blue" /><Stat label="Drafts" value={owned.filter((item) => !item.published).length} note="Awaiting review" icon={FileText} tone="amber" /></div><div className="dashboard-columns"><section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">CONTENT ACTIVITY</p><h2>Recently updated</h2></div><Link to="/teacher/practicals" className="text-link">All practicals <ArrowRight size={14} /></Link></div>{owned.length ? owned.slice(0, 4).map((item) => <div className="activity-row" key={item.id}><span className="activity-file"><FileText size={17} /></span><div><strong>{item.title}</strong><small>{subjects.find((subject) => subject.id === item.subjectId)?.name} · Practical {number(item.practicalNumber)}</small></div><Status>{item.published ? 'Published' : 'Draft'}</Status></div>) : <EmptyState title="No practicals yet" text="Your published and draft practicals will appear here." icon={ClipboardList} />}</section><section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">YOUR COURSES</p><h2>Assigned subjects</h2></div></div>{assignedSubjects.length ? assignedSubjects.map((subject) => <Link to="/teacher/subjects" className="course-row" key={subject.id}><span className="subject-monogram">{subject.name.slice(0, 2).toUpperCase()}</span><span><strong>{subject.name}</strong><small>{subject.code}</small></span><ChevronRight size={16} /></Link>) : <EmptyState title="No subjects assigned" text="Your college will assign subjects to your account." icon={BookOpen} />}</section></div></>;
+  return <><PageHeading eyebrow="FACULTY WORKSPACE" title={`Welcome, ${user?.name || 'Teacher'}`} description="Manage your course material and guide students through their practical work." actions={<Link to="/teacher/practicals/add" className="button button-primary"><Plus size={16} />Add practical</Link>} /><div className="stat-grid"><Stat label="Assigned subjects" value={assignedSubjects.length} note="Current assignments" icon={BookOpen} /><Stat label="Total practicals" value={owned.length} note="Across your subjects" icon={ClipboardList} tone="green" /><Stat label="Published" value={owned.filter((item) => item.published).length} note="Visible to students" icon={CheckCircle2} tone="blue" /><Stat label="Drafts" value={owned.filter((item) => !item.published).length} note="Awaiting review" icon={FileText} tone="amber" /></div><div className="dashboard-columns"><section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">CONTENT ACTIVITY</p><h2>Recently updated</h2></div><Link to="/teacher/practicals" className="text-link">All practicals <ArrowRight size={14} /></Link></div>{owned.length ? owned.slice(0, 4).map((item) => <div className="activity-row" key={item.id}><span className="activity-file"><FileText size={17} /></span><div><strong>{item.title}</strong><small>{subjects.find((subject) => subject.id === item.subjectId)?.name} · Practical {number(item.practicalNumber)}</small></div><Status>{item.published ? 'Published' : 'Draft'}</Status></div>) : <EmptyState title="No practicals yet" text="Your published and draft practicals will appear here." icon={ClipboardList} />}</section><section className="surface dashboard-panel"><div className="panel-heading"><div><p className="eyebrow">YOUR COURSES</p><h2>Assigned subjects</h2></div></div>{assignedSubjects.length ? assignedSubjects.map((subject) => <Link to="/teacher/subjects" className="course-row" key={subject.id}><span className="subject-monogram">{subject.name.slice(0, 2).toUpperCase()}</span><span><strong>{subject.name}</strong><small>{subject.code}</small></span><ChevronRight size={16} /></Link>) : <EmptyState title="No subjects assigned" text="Your college will assign subjects to your account." icon={BookOpen} />}</section></div><DashboardSharedNotes role="teacher" /></>;
 }
 
 function TeacherSubjects({ subjectList = [], onAssigned, notify }) {
@@ -1596,6 +1971,7 @@ export default function PortalExperience() {
   const navigate = useNavigate();
   const role = location.pathname.split('/')[1] || 'student';
   const route = `/${location.pathname.split('/').slice(2).join('/')}`.replace(/\/$/, '') || '/dashboard';
+  const [hasOpenedMyraa, setHasOpenedMyraa] = useState(route === '/myraa');
   const [search, setSearch] = useState('');
   const [notificationOpen, setNotificationOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -1616,7 +1992,12 @@ export default function PortalExperience() {
   const [adminNotifications, setAdminNotifications] = useState([]);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
+  const dataLoadRef = useRef({ identity: '', status: 'idle' });
   const notify = (message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); };
+
+  useEffect(() => {
+    if (role === 'student' && route === '/myraa') setHasOpenedMyraa(true);
+  }, [role, route]);
 
   useEffect(() => {
     const handleSearchShortcut = (event) => {
@@ -1644,15 +2025,30 @@ export default function PortalExperience() {
 
   useEffect(() => {
     if (!user || !token) {
+      dataLoadRef.current = { identity: '', status: 'idle' };
       setDataLoading(false);
       setDataError('Your session is no longer available. Please sign in again.');
       return undefined;
     }
-    let isMounted = true;
+    const identity = `${user._id || user.id || user.role}:${token}`;
+    const studentPageDoesNotNeedAcademicData = user.role === 'student' && ['/myraa', '/profile'].includes(route);
+    if (studentPageDoesNotNeedAcademicData) {
+      if (dataLoadRef.current.identity !== identity) {
+        dataLoadRef.current = { identity, status: 'idle' };
+      }
+      setDataLoading(false);
+      setDataError('');
+      return undefined;
+    }
+    if (dataLoadRef.current.identity === identity && ['loading', 'loaded'].includes(dataLoadRef.current.status)) {
+      return undefined;
+    }
+    dataLoadRef.current = { identity, status: 'loading' };
 
     const loadAcademicData = async () => {
       setDataLoading(true);
       setDataError('');
+      let loaded = false;
       try {
         if (user.role === 'student') {
           const [subjectResponse, practicalResponse, progressResponse, bookmarkResponse] = await Promise.all([
@@ -1662,7 +2058,7 @@ export default function PortalExperience() {
             bookmarkService.getAll()
           ]);
 
-          if (!isMounted) return;
+          if (dataLoadRef.current.identity !== identity) return;
           setStudentSubjectList(subjectResponse?.data?.subjects || []);
           setStudentPracticalList(practicalResponse?.data?.practicals || []);
           const loadedProgress = progressResponse?.data?.progress || [];
@@ -1680,7 +2076,7 @@ export default function PortalExperience() {
             api.get('/admin/practicals'), api.get('/admin/teachers'), api.get('/admin/students'), api.get('/admin/subjects'),
             departmentService.getAll(), yearService.getAll(), semesterService.getAll(), notificationService.getAll()
           ]);
-          if (!isMounted) return;
+          if (dataLoadRef.current.identity !== identity) return;
           setPracticalList(practicals?.data?.practicals || []);
           setAdminTeacherList(teachers?.data?.teachers || []);
           setAdminStudentList(students?.data?.students || []);
@@ -1692,20 +2088,22 @@ export default function PortalExperience() {
             semesters: semesters?.data?.semesters || []
           });
         }
+        loaded = true;
       } catch (error) {
-        if (!isMounted) return;
+        if (dataLoadRef.current.identity !== identity) return;
         setDataError(error.message || 'Unable to load your academic data.');
         notify(error.message || 'Unable to load your academic data.');
       } finally {
-        if (isMounted) setDataLoading(false);
+        if (dataLoadRef.current.identity === identity) {
+          dataLoadRef.current.status = loaded ? 'loaded' : 'idle';
+          setDataLoading(false);
+        }
       }
     };
 
-    loadAcademicData();
-    return () => {
-      isMounted = false;
-    };
-  }, [user, token]);
+    void loadAcademicData();
+    return undefined;
+  }, [user, token, route]);
 
   useEffect(() => {
     if (user?.role !== 'admin' || !token) return undefined;
@@ -1825,5 +2223,5 @@ export default function PortalExperience() {
 
   const searchSubjects = role === 'student' ? studentSubjectList : role === 'teacher' ? teacherSubjectList : adminSubjectList;
   const searchPracticals = role === 'student' ? studentPracticalList : role === 'teacher' ? teacherPracticalList : practicalList;
-  return <DashboardShell role={role} user={user} search={search} setSearch={setSearch} notificationOpen={notificationOpen} setNotificationOpen={setNotificationOpen} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={logout} searchSubjects={searchSubjects} searchPracticals={searchPracticals} notificationItems={adminNotifications} onNotificationRead={markNotificationRead}><div className="page-enter">{page}</div><div className={`toast ${toast ? 'toast-visible' : ''}`} role="status"><CheckCircle2 size={17} />{toast}</div></DashboardShell>;
+  return <DashboardShell role={role} user={user} search={search} setSearch={setSearch} notificationOpen={notificationOpen} setNotificationOpen={setNotificationOpen} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={logout} searchSubjects={searchSubjects} searchPracticals={searchPracticals} notificationItems={adminNotifications} onNotificationRead={markNotificationRead}><div className="page-enter">{page}</div>{role === 'student' && hasOpenedMyraa && <div hidden={route !== '/myraa'}><Suspense fallback={route === '/myraa' ? <WorkspaceLoading title="Loading Myraa" description="Preparing your voice assistant." /> : null}><MyraaIntegrated /></Suspense></div>}<div className={`toast ${toast ? 'toast-visible' : ''}`} role="status"><CheckCircle2 size={17} />{toast}</div></DashboardShell>;
 }

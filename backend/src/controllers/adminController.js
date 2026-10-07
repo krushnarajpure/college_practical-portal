@@ -7,7 +7,7 @@ import Subject from '../models/Subject.js';
 import User from '../models/User.js';
 import Practical from '../models/Practical.js';
 import { env } from '../config/env.js';
-import { getProfilePhotoBucket } from '../config/storage.js';
+import { getProfilePhotoBucket, storageConfig } from '../config/storage.js';
 import { errorResponse } from '../utils/apiResponse.js';
 
 export const getAdminDashboard = async (req, res) => {
@@ -98,17 +98,19 @@ export const getAdminStorage = async (_req, res, next) => {
     const db = mongoose.connection.db;
     if (!db) throw Object.assign(new Error('MongoDB is not connected.'), { name: 'MongoNotConnectedError', statusCode: 503 });
 
-    const [databaseStats, profilePhotoStats, practicalPdfStats, academicDocumentStats] = await Promise.all([
+    const [databaseStats, profilePhotoStats, practicalPdfStats, academicDocumentStats, academicNoteStats] = await Promise.all([
       db.stats(),
       db.collection('profilePhotos.files').aggregate([{ $group: { _id: null, bytes: { $sum: '$length' }, files: { $sum: 1 } } }]).next(),
       db.collection('practicalPDFs.files').aggregate([{ $group: { _id: null, bytes: { $sum: '$length' }, files: { $sum: 1 } } }]).next(),
-      db.collection('academicDocuments.files').aggregate([{ $group: { _id: null, bytes: { $sum: '$length' }, files: { $sum: 1 } } }]).next()
+      db.collection('academicDocuments.files').aggregate([{ $group: { _id: null, bytes: { $sum: '$length' }, files: { $sum: 1 } } }]).next(),
+      db.collection('academicNotes.files').aggregate([{ $group: { _id: null, bytes: { $sum: '$length' }, files: { $sum: 1 } } }]).next()
     ]);
     const limitBytes = env.mongoStorageLimitMb ? env.mongoStorageLimitMb * 1024 * 1024 : null;
     const usedBytes = Number(databaseStats.storageSize || 0) + Number(databaseStats.indexSize || 0);
 
     return res.status(200).json(successResponse('MongoDB storage usage retrieved.', {
       databaseName: db.databaseName,
+      uploadLimitBytes: storageConfig.maxFileSize,
       collections: Number(databaseStats.collections || 0),
       documents: Number(databaseStats.objects || 0),
       dataBytes: Number(databaseStats.dataSize || 0),
@@ -117,10 +119,15 @@ export const getAdminStorage = async (_req, res, next) => {
       remainingBytes: limitBytes === null ? null : Math.max(0, limitBytes - usedBytes),
       usagePercent: limitBytes ? Math.round((usedBytes / limitBytes) * 10000) / 100 : null,
       quotaSource: env.mongoStorageLimitSource,
+      storageEngine: 'MongoDB',
+      binaryStorage: 'GridFS',
       gridFs: {
         profilePhotos: { files: profilePhotoStats?.files || 0, bytes: profilePhotoStats?.bytes || 0 },
         practicalPdfs: { files: practicalPdfStats?.files || 0, bytes: practicalPdfStats?.bytes || 0 },
-        academicDocuments: { files: academicDocumentStats?.files || 0, bytes: academicDocumentStats?.bytes || 0 }
+        academicDocuments: { files: academicDocumentStats?.files || 0, bytes: academicDocumentStats?.bytes || 0 },
+        academicNotes: { files: academicNoteStats?.files || 0, bytes: academicNoteStats?.bytes || 0 },
+        totalFiles: [profilePhotoStats, practicalPdfStats, academicDocumentStats, academicNoteStats].reduce((total, bucket) => total + Number(bucket?.files || 0), 0),
+        totalBytes: [profilePhotoStats, practicalPdfStats, academicDocumentStats, academicNoteStats].reduce((total, bucket) => total + Number(bucket?.bytes || 0), 0)
       }
     }));
   } catch (error) {

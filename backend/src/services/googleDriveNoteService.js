@@ -3,6 +3,7 @@ import path from 'path';
 import { google } from 'googleapis';
 import { env } from '../config/env.js';
 import Note from '../models/Note.js';
+import NoteFolder from '../models/NoteFolder.js';
 
 const DRIVE_SCOPE = ['https://www.googleapis.com/auth/drive.readonly'];
 const FOLDER_MIME_TYPE = 'application/vnd.google-apps.folder';
@@ -83,6 +84,8 @@ const sanitizeDriveFile = (file, folderPath, rootName, folderPathSegments) => {
 
   return {
     driveFileId: file.id,
+    filename: title,
+    originalName: title,
     title,
     description: file.description || '',
     category: folderPathSegments[1] || rootName,
@@ -100,9 +103,10 @@ const sanitizeDriveFile = (file, folderPath, rootName, folderPathSegments) => {
   };
 };
 
-const listFilesInFolder = async (drive, folderId, folderPath, folderPathSegments, rootName, seenFolders, discoveredFiles, stats) => {
+const listFilesInFolder = async (drive, folderId, folderPath, folderPathSegments, rootName, seenFolders, discoveredFiles, discoveredFolders, stats) => {
   if (seenFolders.has(folderId)) return;
   seenFolders.add(folderId);
+  discoveredFolders.set(folderPath, { path: folderPath, segments: folderPathSegments });
 
   let pageToken;
   do {
@@ -122,7 +126,7 @@ const listFilesInFolder = async (drive, folderId, folderPath, folderPathSegments
         stats.foldersFound += 1;
         const childName = file.name || 'Untitled folder';
         const childPath = `${folderPath}/${childName}`;
-        await listFilesInFolder(drive, file.id, childPath, [...folderPathSegments, childName], rootName, seenFolders, discoveredFiles, stats);
+        await listFilesInFolder(drive, file.id, childPath, [...folderPathSegments, childName], rootName, seenFolders, discoveredFiles, discoveredFolders, stats);
         continue;
       }
 
@@ -153,6 +157,7 @@ const performGoogleDriveNoteSync = async () => {
 
   const stats = { foldersFound: 0, duplicatesSkipped: 0 };
   const discoveredFiles = new Map();
+  const discoveredFolders = new Map();
   await listFilesInFolder(
     drive,
     rootFolder.id,
@@ -161,35 +166,92 @@ const performGoogleDriveNoteSync = async () => {
     rootFolder.name || 'Shared notes',
     new Set(),
     discoveredFiles,
+    discoveredFolders,
     stats
   );
 
   const notes = [...discoveredFiles.values()];
+  const driveFolderMap = new Map();
+  for (const folder of [...discoveredFolders.values()].sort((left, right) => left.segments.length - right.segments.length)) {
+    if (folder.segments.length === 1) {
+      driveFolderMap.set(folder.path, null);
+      continue;
+    }
+    const relativeSegments = folder.segments.slice(1);
+    const sourceParentPath = folder.segments.slice(0, -1).join('/');
+    const parent = driveFolderMap.get(sourceParentPath) || null;
+    const targetPath = parent ? `${parent.path}/${relativeSegments.at(-1)}` : relativeSegments.at(-1);
+    let storedFolder = await NoteFolder.findOne({ sourcePath: folder.path });
+    if (storedFolder?.isDeleted) {
+      driveFolderMap.set(folder.path, null);
+      continue;
+    }
+    if (!storedFolder) {
+      storedFolder = await NoteFolder.findOne({ path: targetPath });
+      if (storedFolder && !storedFolder.sourcePath) {
+        storedFolder.sourcePath = folder.path;
+        await storedFolder.save();
+      }
+    }
+    if (!storedFolder) {
+      storedFolder = await NoteFolder.create({
+        name: relativeSegments.at(-1),
+        parentId: parent?._id || null,
+        path: targetPath,
+        sourcePath: folder.path,
+        source: 'googleDrive'
+      });
+    }
+    driveFolderMap.set(folder.path, storedFolder);
+  }
+  for (const note of notes) {
+    const storedFolder = driveFolderMap.get(note.folderPath);
+    note.folderId = storedFolder?._id || null;
+    note.storageType = 'googleDrive';
+  }
   let filesAdded = 0;
   let filesUpdated = 0;
 
   for (let offset = 0; offset < notes.length; offset += 500) {
     const batch = notes.slice(offset, offset + 500);
-    const result = await Note.bulkWrite(
-      batch.map((note) => ({
+    const existingMovedNotes = await Note.find({
+      driveFileId: { $in: batch.map((note) => note.driveFileId) },
+      folderMovedByAdmin: true
+    }).select('driveFileId folderId folderPath folderPathSegments category').lean();
+    const movedById = new Map(existingMovedNotes.map((note) => [note.driveFileId, note]));
+    const operations = batch.map((note) => {
+      const previous = movedById.get(note.driveFileId);
+      const set = { ...note };
+      if (previous) {
+        set.folderId = previous.folderId;
+        set.folderPath = previous.folderPath;
+        set.folderPathSegments = previous.folderPathSegments;
+        set.category = previous.category;
+      }
+      return {
         updateOne: {
           filter: { driveFileId: note.driveFileId },
           update: {
-            $set: note,
-            $setOnInsert: { customTitle: '', isPublic: false, isDeleted: false }
+            $set: set,
+            $setOnInsert: { customTitle: '', isPublic: false, isDeleted: false, folderMovedByAdmin: false }
           },
           upsert: true
         }
-      })),
-      { ordered: true }
-    );
+      };
+    });
+    const result = await Note.bulkWrite(operations, { ordered: true });
 
     filesAdded += result.upsertedCount || 0;
     filesUpdated += batch.length - (result.upsertedCount || 0);
   }
 
   const result = await Note.updateMany(
-    { isActive: true, isDeleted: { $ne: true }, driveFileId: { $nin: notes.map((note) => note.driveFileId) } },
+    {
+      isActive: true,
+      isDeleted: { $ne: true },
+      driveFileId: { $nin: notes.map((note) => note.driveFileId) },
+      $or: [{ storageType: 'googleDrive' }, { storageType: { $exists: false } }]
+    },
     { $set: { isActive: false, lastSyncedAt: new Date() } }
   );
 

@@ -31,7 +31,7 @@ const toServiceAccountJson = () => {
 const maxPdfSizeMb = Number(process.env.MAX_PDF_SIZE_MB) || 25;
 const pdfPageRenderDpi = Math.min(600, Math.max(150, Number(process.env.PDF_PAGE_RENDER_DPI) || 300));
 const configuredMongoStorageLimitMb = Number(process.env.MONGODB_STORAGE_LIMIT_MB);
-const mongoStorageLimitMb = configuredMongoStorageLimitMb || 512;
+const mongoStorageLimitMb = configuredMongoStorageLimitMb;
 
 export const env = {
   port: process.env.PORT || 5000,
@@ -41,8 +41,8 @@ export const env = {
   maxAcademicDocumentSizeBytes: (Number(process.env.MAX_ACADEMIC_DOCUMENT_SIZE_MB) || 25) * 1024 * 1024,
   frontendUrl: process.env.FRONTEND_URL || (process.env.NODE_ENV === 'production' ? 'https://college-practical-portal.vercel.app' : 'http://localhost:5173'),
   maxPdfSizeBytes: maxPdfSizeMb * 1024 * 1024,
-  mongoStorageLimitMb: Number.isFinite(mongoStorageLimitMb) && mongoStorageLimitMb > 0 ? mongoStorageLimitMb : 512,
-  mongoStorageLimitSource: Number.isFinite(configuredMongoStorageLimitMb) && configuredMongoStorageLimitMb > 0 ? 'configured' : 'default-estimate',
+  mongoStorageLimitMb: Number.isFinite(mongoStorageLimitMb) && mongoStorageLimitMb > 0 ? mongoStorageLimitMb : null,
+  mongoStorageLimitSource: Number.isFinite(configuredMongoStorageLimitMb) && configuredMongoStorageLimitMb > 0 ? 'configured' : 'not-configured',
   pdfPageRenderDpi,
   googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
   googleServiceAccountJson: toServiceAccountJson() || process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '',
