@@ -14,6 +14,7 @@ function Sidebar() {
       ['Teachers', '/admin/teachers'],
       ['Students', '/admin/students'],
       ['Practicals', '/admin/practicals'],
+      ['Team members', '/admin/team'],
       ['Settings', '/admin/settings'],
       ['Profile', '/admin/profile']
     ],

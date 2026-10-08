@@ -47,6 +47,16 @@ export const createSubmission = async (req, res, next) => {
     if (!req.file && !String(req.body.content || '').trim()) return res.status(400).json(errorResponse('Upload a PDF or provide submission content.', 'Bad Request', 400));
 
     const latest = await Submission.findOne({ studentId: account._id, practicalId: practical._id }).sort({ attempt: -1 });
+    if (latest && latest.status !== 'Resubmission Required') {
+      if (req.file?.gridFsFileId) {
+        try {
+          await getGridFSBucket().delete(req.file.gridFsFileId);
+        } catch (cleanupError) {
+          return next(cleanupError);
+        }
+      }
+      return res.status(409).json(errorResponse('A new attempt is allowed only after your teacher requests a resubmission.', 'Conflict', 409));
+    }
     const file = req.file ? {
       gridFsFileId: req.file.gridFsFileId,
       originalFileName: req.file.originalFileName,

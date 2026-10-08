@@ -2,13 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight, BookOpen, Check, ChevronRight, ClipboardList, FileText,
-  GraduationCap, Instagram, Linkedin, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, Users
+  GraduationCap, Instagram, Linkedin, LoaderCircle, LockKeyhole, Mail, Phone, ShieldCheck, Sparkles, Users
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import ThemeToggle from '../common/ThemeToggle';
 import api from '../../services/api';
 import { getAcademicYearOptions } from '../../utils/academicYear';
 import krushnaPhoto from '../../../krushna.jpeg';
+import teamService from '../../services/teamService';
 
 const roleDestinations = { student: '/student/dashboard', teacher: '/teacher/dashboard', admin: '/admin/dashboard' };
 const roleCopy = {
@@ -36,13 +37,40 @@ function LandingPage() {
   </main><footer className="public-footer"><div className="footer-main"><Link to="/" className="brand-lockup"><span className="brand-mark"><BookOpen size={19} /></span><span><strong>College Practical Portal</strong><small>ALL YOUR PRACTICALS. ONE PLACE.</small></span></Link><p>Practical learning, thoughtfully organized.</p><div className="footer-links"><a href="#features">Features</a><Link to="/login">Login</Link><Link to="/register">Register</Link><a href="mailto:portal@college.edu">Contact</a><button onClick={() => window.alert('Privacy information will be available when the portal is connected to college policy.')}>Privacy</button><button onClick={() => window.alert('Terms will be available when the portal is connected to college policy.')}>Terms</button></div></div><Link to="/owner-profile" className="footer-owner-link"><img src={krushnaPhoto} alt="Krushna Rajpure" /><span><small>WEBSITE ADMINISTRATOR</small><strong>Krushna Rajpure</strong></span><ArrowRight size={17} aria-hidden="true" /></Link><div className="footer-meta"><span>© 2026 College Practical Portal</span><span>For the college community</span></div></footer></div>;
 }
 
+function OwnerTeamAvatar({ member, initials }) {
+  const [photoUnavailable, setPhotoUnavailable] = useState(false);
+  return member.hasPhoto && !photoUnavailable
+    ? <img className="owner-team-avatar owner-team-photo" src={teamService.getPhotoUrl(member._id, member.updatedAt)} alt={`${member.name} profile`} onError={() => setPhotoUnavailable(true)} />
+    : <span className="owner-team-avatar" aria-hidden="true">{initials}</span>;
+}
+
 function OwnerProfilePage() {
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [teamLoading, setTeamLoading] = useState(true);
+  const [teamError, setTeamError] = useState('');
   const contactLinks = [
     { label: 'Email', value: 'krushnarajpure93@gmail.com', href: 'mailto:krushnarajpure93@gmail.com', Icon: Mail },
     { label: 'Phone', value: '9860894960', href: 'tel:9860894960', Icon: Phone },
     { label: 'Instagram', value: '@krushna_rajpure', href: 'https://www.instagram.com/krushna_rajpure/', Icon: Instagram, external: true },
     { label: 'LinkedIn', value: 'krushna_rajpure', href: 'https://www.linkedin.com/in/krushna_rajpure/', Icon: Linkedin, external: true }
   ];
+
+  const loadTeamMembers = async () => {
+    setTeamLoading(true);
+    setTeamError('');
+    try {
+      const response = await teamService.getPublicMembers();
+      setTeamMembers(response?.data?.members || []);
+    } catch (error) {
+      setTeamError(error.message || 'Team profiles are temporarily unavailable.');
+    } finally {
+      setTeamLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadTeamMembers();
+  }, []);
 
   return <div className="public-page owner-profile-page">
     <PublicHeader />
@@ -57,6 +85,24 @@ function OwnerProfilePage() {
           <p className="owner-profile-description">Building a clear, reliable place for students and teachers to manage practical learning resources.</p>
           <Link to="/owner-profile/admin-login" className="button button-primary owner-admin-link">Administrator sign in <ArrowRight size={15} /></Link>
         </div>
+      </section>
+      <section className="owner-team-section" aria-labelledby="owner-team-title">
+        <div className="owner-team-heading">
+          <div><p className="eyebrow">THE PEOPLE BEHIND THE PORTAL</p><h2 id="owner-team-title">Meet the team</h2></div>
+          <p>A dedicated team making practical learning clearer and easier for every student.</p>
+        </div>
+        {teamLoading ? <div className="owner-team-status"><LoaderCircle className="team-spinner" size={18} />Loading team profiles...</div>
+          : teamError ? <div className="owner-team-status owner-team-error" role="alert">{teamError}<button type="button" onClick={loadTeamMembers}>Try again</button></div>
+            : teamMembers.length ? <div className="owner-team-grid">{teamMembers.map((member) => {
+              const initials = member.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'TM';
+              return <article className="owner-team-card" key={member._id}>
+                <OwnerTeamAvatar member={member} initials={initials} />
+                <div className="owner-team-card-content"><p className="owner-team-role">{member.title}</p><h3>{member.name}</h3>{member.bio && <p className="owner-team-bio">{member.bio}</p>}
+                  <div className="owner-team-links">{member.email && <a href={`mailto:${member.email}`}><Mail size={14} />Email</a>}{member.profileUrl && <a href={member.profileUrl} target="_blank" rel="noreferrer">Profile <ArrowRight size={14} /></a>}</div>
+                </div>
+              </article>;
+            })}</div>
+              : <div className="owner-team-empty"><Users size={20} /><span>Our team profiles will be introduced here soon.</span></div>}
       </section>
       <section className="owner-contact-section" aria-labelledby="owner-contact-title">
         <div className="owner-contact-heading"><p className="eyebrow">GET IN TOUCH</p><h2 id="owner-contact-title">Contact</h2></div>

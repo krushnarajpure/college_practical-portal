@@ -19,9 +19,12 @@ import teacherService from '../../services/teacherService';
 import studentService from '../../services/studentService';
 import pdfService from '../../services/pdfService';
 import AcademicDocumentsPage from '../../features/academicDocuments/AcademicDocumentsPage';
+import TeamManagementPage from '../../features/team/TeamManagementPage';
 import progressService from '../../services/progressService';
 import bookmarkService from '../../services/bookmarkService';
 import notificationService from '../../services/notificationService';
+import submissionService from '../../services/submissionService';
+import evaluationService from '../../services/evaluationService';
 import TeacherPracticalModal from './TeacherPracticalModal';
 import TeacherSubjectModal from './TeacherSubjectModal';
 import WorkspaceLoading from '../common/WorkspaceLoading';
@@ -70,8 +73,30 @@ function SubjectTile({ subject, items, completedCount = 0 }) {
   </article>;
 }
 
-function PracticalRow({ practical, subject, onOpen, completed = false }) {
-  return <div className="practical-row"><span className="row-number">{number(practical.practicalNumber)}</span><div className="row-main"><strong>{practical.title}</strong><span>{subject?.name || 'Course practical'}</span></div><Status>{completed ? 'Completed' : 'Available'}</Status><Button variant="quiet" onClick={() => onOpen(practical)} aria-label={`View ${practical.title}`}>View <ChevronRight size={15} /></Button></div>;
+function PracticalRow({ practical, subject, onOpen, completed = false, submissionStatus }) {
+  return <div className="practical-row"><span className="row-number">{number(practical.practicalNumber)}</span><div className="row-main"><strong>{practical.title}</strong><span>{subject?.name || 'Course practical'}</span></div><Status>{submissionStatus || (completed ? 'Completed' : 'Available')}</Status><Button variant="quiet" onClick={() => onOpen(practical)} aria-label={`View ${practical.title}`}>View <ChevronRight size={15} /></Button></div>;
+}
+
+function recordId(value) {
+  return String(value?._id || value?.id || value || '');
+}
+
+function latestSubmissionFor(submissions, practicalId) {
+  return (submissions || [])
+    .filter((submission) => recordId(submission.practicalId) === String(practicalId))
+    .sort((first, second) => Number(second.attempt || 0) - Number(first.attempt || 0))[0];
+}
+
+async function downloadSubmissionFile(submission) {
+  const file = await submissionService.getFile(recordId(submission));
+  const url = URL.createObjectURL(file);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = submission.submissionFile?.originalFileName || 'practical-submission.pdf';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function getInitials(name = '') {
@@ -137,7 +162,7 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
       ['Years', '/admin/years', GraduationCap], ['Semesters', '/admin/semesters', Activity],
       ['Subjects', '/admin/subjects', BookOpen], ['Teachers', '/admin/teachers', Users],
       ['Students', '/admin/students', Users], ['Practicals', '/admin/practicals', ClipboardList],
-      ['Notes', '/admin/notes', Notebook], ['Settings', '/admin/settings', Settings]
+      ['Team members', '/admin/team', Users], ['Notes', '/admin/notes', Notebook], ['Settings', '/admin/settings', Settings]
     ]
   };
   const scope = role === 'student'
@@ -317,7 +342,7 @@ function StudentSubjects({ user, practicalList, subjectList = [], completedIds =
   return <><PageHeading eyebrow="LEARNING MATERIAL" title="My subjects" description="Subjects assigned to your current academic semester." /><div className="filter-bar"><span><GraduationCap size={16} />{user?.departmentId?.name || user?.departmentId || 'Department'} <i />{user?.yearId?.name || user?.yearId || 'Year'} <i />{user?.semesterId?.name || user?.semesterId || 'Semester'}</span><span className="muted-inline">{studentSubjects.length} subjects</span></div>{studentSubjects.length ? <div className="subject-grid subject-grid-wide">{studentSubjects.map((subject) => { const items = (practicalList || []).map(normalizePracticalFromApi).filter((item) => item && String(item.subjectId) === String(subject.id)); return <SubjectTile key={subject.id} subject={subject} items={items} completedCount={items.filter((item) => completedIds.includes(String(item.id))).length} />; })}</div> : <EmptyState title="No subjects yet" text="No subjects are assigned to you yet." />}</>;
 }
 
-function StudentSubjectDetail({ subjectId, subjectList = [], completedIds = [] }) {
+function StudentSubjectDetail({ subjectId, subjectList = [], completedIds = [], submissionList = [] }) {
   const navigate = useNavigate();
   const subjectPool = subjectList.map(normalizeSubjectFromApi).filter(Boolean);
   const subject = subjectPool.find((item) => String(item.id) === String(subjectId));
@@ -342,10 +367,10 @@ function StudentSubjectDetail({ subjectId, subjectList = [], completedIds = [] }
   const completed = items.filter((item) => completedIds.includes(String(item.id))).length;
   if (loading) return <EmptyState title="Loading practicals..." text="Fetching the latest published practicals for this subject." icon={Activity} />;
   if (loadError) return <EmptyState title="Unable to load practicals" text={loadError} icon={Activity} />;
-  return <><div className="breadcrumbs"><Link to="/student/dashboard">Dashboard</Link><ChevronRight size={14} /><Link to="/student/subjects">My subjects</Link><ChevronRight size={14} /><span>{subject.name}</span></div><PageHeading eyebrow={`${subject.code} · ${subject.semesterName || subject.semesterId}`} title={subject.name} description={subject.description} actions={<Button variant="secondary" onClick={() => navigate(`/student/practicals?subject=${subject.id}`)}>View all practicals <ArrowRight size={15} /></Button>} /><div className="stat-grid stat-grid-small"><Stat label="Total practicals" value={items.length} icon={ClipboardList} /><Stat label="Completed" value={completed} icon={CheckCircle2} tone="green" /><Stat label="Remaining" value={items.length - completed} icon={Clock3} tone="amber" /></div><div className="section-heading"><div><p className="eyebrow">PRACTICAL SEQUENCE</p><h2>Course practicals</h2></div><span className="muted-inline">Ordered by practical number</span></div><section className="surface practical-list">{items.map((item) => <PracticalRow key={item.id} practical={item} subject={subject} completed={completedIds.includes(String(item.id))} onOpen={(practical) => navigate(`/student/practicals/${practical.id}`)} />)}{!items.length && <EmptyState title="No practicals published" text="No practicals have been published for this subject." />}</section></>;
+  return <><div className="breadcrumbs"><Link to="/student/dashboard">Dashboard</Link><ChevronRight size={14} /><Link to="/student/subjects">My subjects</Link><ChevronRight size={14} /><span>{subject.name}</span></div><PageHeading eyebrow={`${subject.code} · ${subject.semesterName || subject.semesterId}`} title={subject.name} description={subject.description} actions={<Button variant="secondary" onClick={() => navigate(`/student/practicals?subject=${subject.id}`)}>View all practicals <ArrowRight size={15} /></Button>} /><div className="stat-grid stat-grid-small"><Stat label="Total practicals" value={items.length} icon={ClipboardList} /><Stat label="Completed" value={completed} icon={CheckCircle2} tone="green" /><Stat label="Remaining" value={items.length - completed} icon={Clock3} tone="amber" /></div><div className="section-heading"><div><p className="eyebrow">PRACTICAL SEQUENCE</p><h2>Course practicals</h2></div><span className="muted-inline">Ordered by practical number</span></div><section className="surface practical-list">{items.map((item) => <PracticalRow key={item.id} practical={item} subject={subject} completed={completedIds.includes(String(item.id))} submissionStatus={latestSubmissionFor(submissionList, item.id)?.status || 'Not Submitted'} onOpen={(practical) => navigate(`/student/practicals/${practical.id}`)} />)}{!items.length && <EmptyState title="No practicals published" text="No practicals have been published for this subject." />}</section></>;
 }
 
-function StudentPracticals({ practicalList, subjectList = [], completedIds = [] }) {
+function StudentPracticals({ practicalList, subjectList = [], completedIds = [], submissionList = [] }) {
   const navigate = useNavigate();
   const params = new URLSearchParams(useLocation().search);
   const [filter, setFilter] = useState('All');
@@ -362,13 +387,17 @@ function StudentPracticals({ practicalList, subjectList = [], completedIds = [] 
   const shown = [...filteredItems].sort((first, second) => sort === 'title'
     ? first.title.localeCompare(second.title)
     : Number(first.practicalNumber) - Number(second.practicalNumber));
-  return <><PageHeading eyebrow="LEARNING MATERIAL" title="Practicals" description="Browse published practicals across your assigned subjects." /><div className="table-toolbar practical-toolbar"><label className="field-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search practicals" /></label><label className="practical-filter-select"><span className="sr-only">Filter by subject</span><select value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)}><option value="All">All subjects</option>{subjectPool.map((subject) => <option key={subject.id} value={String(subject.id)}>{subject.name}</option>)}</select></label><label className="practical-filter-select"><span className="sr-only">Sort practicals</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="sequence">Practical sequence</option><option value="title">Title A–Z</option></select></label><div className="segmented-control" aria-label="Filter practicals">{['All', 'Completed', 'Pending'].map((value) => <button key={value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value}</button>)}</div><span className="muted-inline practical-result-count">{shown.length} results</span></div><section className="surface practical-list">{shown.map((item) => <PracticalRow key={item.id} practical={item} subject={subjectPool.find((entry) => String(entry.id) === String(item.subjectId))} completed={completedIds.includes(String(item.id))} onOpen={(practical) => navigate(`/student/practicals/${practical.id}`)} />)}{!shown.length && <EmptyState title="No practicals found" text={query || subjectFilter !== 'All' ? 'Try another search term or clear your filters.' : 'No practicals match this status yet.'} icon={Filter} />}</section></>;
+  return <><PageHeading eyebrow="LEARNING MATERIAL" title="Practicals" description="Browse published practicals, submit your work and track teacher feedback." /><div className="table-toolbar practical-toolbar"><label className="field-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search practicals" /></label><label className="practical-filter-select"><span className="sr-only">Filter by subject</span><select value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)}><option value="All">All subjects</option>{subjectPool.map((subject) => <option key={subject.id} value={String(subject.id)}>{subject.name}</option>)}</select></label><label className="practical-filter-select"><span className="sr-only">Sort practicals</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="sequence">Practical sequence</option><option value="title">Title A–Z</option></select></label><div className="segmented-control" aria-label="Filter practicals">{['All', 'Completed', 'Pending'].map((value) => <button key={value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value}</button>)}</div><span className="muted-inline practical-result-count">{shown.length} results</span></div><section className="surface practical-list">{shown.map((item) => <PracticalRow key={item.id} practical={item} subject={subjectPool.find((entry) => String(entry.id) === String(item.subjectId))} completed={completedIds.includes(String(item.id))} submissionStatus={latestSubmissionFor(submissionList, item.id)?.status || 'Not Submitted'} onOpen={(practical) => navigate(`/student/practicals/${practical.id}`)} />)}{!shown.length && <EmptyState title="No practicals found" text={query || subjectFilter !== 'All' ? 'Try another search term or clear your filters.' : 'No practicals match this status yet.'} icon={Filter} />}</section></>;
 }
 
-function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, completePractical, notify, subjectList = [], completedIds = [] }) {
+function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, completePractical, notify, subjectList = [], completedIds = [], submissionList = [], evaluationList = [], onSubmitted }) {
   const [practical, setPractical] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [submissionContent, setSubmissionContent] = useState('');
+  const [submissionFile, setSubmissionFile] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState('');
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -389,20 +418,87 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
   if (!practical) return <EmptyState title="Practical not found" text="This practical may no longer be available." action={<Link to="/student/practicals" className="text-link">Browse practicals</Link>} />;
   const saved = bookmarkedIds.includes(practical.id);
   const completed = completedIds.includes(String(practical.id));
+  const practicalSubmissions = submissionList
+    .filter((submission) => recordId(submission.practicalId) === String(practical.id))
+    .sort((first, second) => Number(second.attempt || 0) - Number(first.attempt || 0));
+  const latestSubmission = practicalSubmissions[0];
+  const canSubmit = !latestSubmission || latestSubmission.status === 'Resubmission Required';
+  const submitWork = async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    setSubmissionError('');
+    if (!submissionFile && !submissionContent.trim()) {
+      setSubmissionError('Attach a PDF or enter your practical work before submitting.');
+      return;
+    }
+    const payload = new FormData();
+    payload.append('practicalId', practical.id);
+    payload.append('content', submissionContent.trim());
+    if (submissionFile) payload.append('file', submissionFile);
+    setSubmitting(true);
+    try {
+      const response = await submissionService.create(payload);
+      const submission = response?.data?.submission;
+      if (!submission) throw new Error('The server did not return the saved submission.');
+      onSubmitted(submission);
+      setSubmissionContent('');
+      setSubmissionFile(null);
+      form.reset();
+      notify('Practical submitted successfully.');
+    } catch (error) {
+      setSubmissionError(error.message || 'Could not submit this practical.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
   const Section = ({ title, children, number: sectionNumber }) => <section className="detail-section"><div className="detail-section-number">{sectionNumber}</div><div><h2>{title}</h2>{children}</div></section>;
-  return <><div className="breadcrumbs"><Link to="/student/dashboard">Dashboard</Link><ChevronRight size={14} /><Link to={`/student/subjects/${subject?.id}`}>{subject?.name}</Link><ChevronRight size={14} /><span>Practical {number(practical.practicalNumber)}</span></div><div className="practical-detail-layout"><article className="practical-article"><div className="practical-detail-head"><Status>{completed ? 'Completed' : 'Available'}</Status><span className="muted-inline">{subject?.name} · Practical {number(practical.practicalNumber)}</span><h1>{practical.title}</h1><p>Follow the steps below, then use the original handout when you need the teacher's source material.</p><div className="detail-actions"><Button variant="secondary" icon={saved ? Check : Bookmark} onClick={() => { toggleBookmark(practical.id); notify(saved ? 'Bookmark removed.' : 'Bookmark added.'); }}>{saved ? 'Bookmarked' : 'Bookmark'}</Button><Button variant="secondary" icon={Download} onClick={() => pdfService.download(practical.pdfId).catch((error) => notify(error.message || 'Could not download the original PDF.'))} disabled={!practical.pdfId}>Download PDF</Button><Button onClick={() => completePractical(practical.id)} icon={CheckCircle2}>{completed ? 'Mark incomplete' : 'Mark complete'}</Button></div></div>
-    <Section title="Aim" number="01"><p>{practical.aim}</p></Section>
-    <Section title="About this practical" number="02"><p>{practical.about}</p></Section>
-    <Section title="What you will learn" number="03"><ul>{practical.learn?.map((line) => <li key={line}>{line}</li>)}</ul></Section>
-    <Section title="Requirements" number="04"><ul>{practical.requirements?.map((line) => <li key={line}>{line}</li>)}</ul></Section>
-    <Section title="Concept / theory" number="05"><p>{practical.concept}</p></Section>
-    <Section title="Step-by-step procedure" number="06"><ol>{practical.procedure?.map((line, index) => <li key={line}><span>{number(index + 1)}</span>{line}</li>)}</ol></Section>
-    <Section title="Practical task" number="07"><p>{practical.task}</p></Section>
-    <Section title="Expected output" number="08"><div className="output-box"><CheckCircle2 size={17} /><p>{practical.expectedOutput}</p></div></Section>
-    <Section title="Important points" number="09"><ul>{practical.importantPoints?.map((line) => <li key={line}>{line}</li>)}</ul></Section>
-    <Section title="Common errors" number="10"><ul>{practical.commonErrors?.map((line) => <li key={line}>{line}</li>)}</ul></Section>
-    <Section title="Viva questions" number="11"><ol className="viva-list">{practical.vivaQuestions?.map((line, index) => <li key={line}><span>{number(index + 1)}</span>{line}</li>)}</ol></Section>
-    <div className="original-file-mobile"><OriginalPdfPanel notify={notify} /></div></article><aside className="detail-aside"><OriginalPdfPanel notify={notify} /><div className="aside-note"><ShieldCheck size={17} /><p><strong>Teacher source preserved</strong><br />This learning guide does not replace the original practical handout.</p></div></aside></div></>;
+  const hasText = (value) => typeof value === 'string' && value.trim().length > 0;
+  const nonEmptyLines = (lines) => (Array.isArray(lines) ? lines : []).filter(hasText);
+  const guideSections = [
+    { title: 'Aim', content: hasText(practical.aim) && <p>{practical.aim}</p> },
+    { title: 'About this practical', content: hasText(practical.about) && <p>{practical.about}</p> },
+    { title: 'What you will learn', content: nonEmptyLines(practical.learn).length > 0 && <ul>{nonEmptyLines(practical.learn).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
+    { title: 'Requirements', content: nonEmptyLines(practical.requirements).length > 0 && <ul>{nonEmptyLines(practical.requirements).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
+    { title: 'Concept / theory', content: hasText(practical.concept) && <p>{practical.concept}</p> },
+    { title: 'Step-by-step procedure', content: nonEmptyLines(practical.procedure).length > 0 && <ol>{nonEmptyLines(practical.procedure).map((line, index) => <li key={`${index}-${line}`}><span>{number(index + 1)}</span>{line}</li>)}</ol> },
+    { title: 'Practical task', content: hasText(practical.task) && <p>{practical.task}</p> },
+    { title: 'Expected output', content: hasText(practical.expectedOutput) && <div className="output-box"><CheckCircle2 size={17} /><p>{practical.expectedOutput}</p></div> },
+    { title: 'Important points', content: nonEmptyLines(practical.importantPoints).length > 0 && <ul>{nonEmptyLines(practical.importantPoints).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
+    { title: 'Common errors', content: nonEmptyLines(practical.commonErrors).length > 0 && <ul>{nonEmptyLines(practical.commonErrors).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
+    { title: 'Viva questions', content: nonEmptyLines(practical.vivaQuestions).length > 0 && <ol className="viva-list">{nonEmptyLines(practical.vivaQuestions).map((line, index) => <li key={`${index}-${line}`}><span>{number(index + 1)}</span>{line}</li>)}</ol> }
+  ].filter((section) => section.content);
+  return <><div className="breadcrumbs"><Link to="/student/dashboard">Dashboard</Link><ChevronRight size={14} /><Link to={`/student/subjects/${subject?.id}`}>{subject?.name}</Link><ChevronRight size={14} /><span>Practical {number(practical.practicalNumber)}</span></div><div className="practical-detail-layout"><article className="practical-article"><div className="practical-detail-head"><Status>{completed ? 'Completed' : 'Available'}</Status><span className="muted-inline">{subject?.name} · Practical {number(practical.practicalNumber)}</span><h1>{practical.title}</h1><p>{guideSections.length ? "Follow the steps below, then use the original handout when you need the teacher's source material." : practical.pdfId ? 'The written guide is not available yet. View the original practical handout below.' : 'Your teacher has not added written instructions or a source file yet.'}</p><div className="detail-actions"><Button variant="secondary" icon={saved ? Check : Bookmark} onClick={() => { toggleBookmark(practical.id); notify(saved ? 'Bookmark removed.' : 'Bookmark added.'); }}>{saved ? 'Bookmarked' : 'Bookmark'}</Button><Button variant="secondary" icon={Download} onClick={() => pdfService.download(practical.pdfId).catch((error) => notify(error.message || 'Could not download the original PDF.'))} disabled={!practical.pdfId}>Download PDF</Button><Button onClick={() => completePractical(practical.id)} icon={CheckCircle2}>{completed ? 'Mark incomplete' : 'Mark complete'}</Button></div></div>
+    <div className="guide-heading"><div><span className="eyebrow">PRACTICAL GUIDE</span><p>{guideSections.length ? `${guideSections.length} sections · Read through the guide before you begin.` : 'Your teacher’s original handout is available below.'}</p></div><ClipboardList size={19} aria-hidden="true" /></div>
+    {guideSections.length > 0
+      ? <div className="guide-section-list">{guideSections.map((section, index) => <Section key={section.title} title={section.title} number={number(index + 1)}>{section.content}</Section>)}</div>
+      : <><div className="guide-empty-state"><div className="guide-empty-icon"><FileText size={20} /></div><div><h2>Practical guide is not available yet</h2><p>{practical.pdfId ? 'Your teacher has not added the written guide details. The original practical handout is shown below.' : 'Your teacher has not added the written guide or original handout yet. Please check back later.'}</p></div></div>{practical.pdfId && <InlineOriginalPdf pdfId={practical.pdfId} />}</>}
+    <div className="original-file-mobile"><OriginalPdfPanel notify={notify} /></div></article><aside className="detail-aside"><OriginalPdfPanel notify={notify} /><div className="aside-note"><ShieldCheck size={17} /><p><strong>Teacher source preserved</strong><br />This learning guide does not replace the original practical handout.</p></div></aside></div>
+    <section className="surface dashboard-panel">
+      <div className="panel-heading"><div><p className="eyebrow">CLASSROOM SUBMISSION</p><h2>Submit your work</h2></div><Status>{latestSubmission?.status || 'Not Submitted'}</Status></div>
+      {latestSubmission && <p className="page-description">Latest attempt {latestSubmission.attempt} · submitted {new Date(latestSubmission.submissionDate || latestSubmission.createdAt).toLocaleString()}</p>}
+      {canSubmit
+        ? <form className="form-grid" onSubmit={submitWork}>
+          <label className="form-field form-field-wide"><span>Practical work / notes</span><textarea rows="4" value={submissionContent} onChange={(event) => setSubmissionContent(event.target.value)} placeholder="Write your work or add notes for your teacher" /></label>
+          <label className="form-field form-field-wide"><span>Attach your work (PDF)</span><input type="file" accept=".pdf,application/pdf" onChange={(event) => setSubmissionFile(event.target.files?.[0] || null)} /></label>
+          {submissionError && <p className="admin-modal-error" role="alert">{submissionError}</p>}
+          <div className="admin-modal-actions form-field-wide"><Button type="submit" disabled={submitting}>{submitting ? 'Submitting...' : latestSubmission ? 'Submit requested revision' : 'Submit practical'}</Button></div>
+        </form>
+        : <p className="page-description">{latestSubmission.status === 'Evaluated' ? 'Your teacher has evaluated this attempt. You can submit again if your teacher requests a revision.' : 'Your work has been submitted and is waiting for teacher review.'}</p>}
+      {practicalSubmissions.length > 0 && <div className="submission-history">
+        <h3>Submission history</h3>
+        {practicalSubmissions.map((submission) => {
+          const evaluation = evaluationList.find((entry) => recordId(entry.submissionId) === recordId(submission));
+          return <div className="activity-row" key={recordId(submission)}>
+            <span className="activity-file"><FileText size={17} /></span>
+            <div><strong>Attempt {submission.attempt} · {submission.status}</strong><small>{new Date(submission.submissionDate || submission.createdAt).toLocaleString()}{submission.remarks ? ` · ${submission.remarks}` : ''}</small>
+              {evaluation && <small>Marks: {evaluation.marksObtained}/{evaluation.maximumMarks} ({evaluation.resultStatus}){evaluation.remarks ? ` · ${evaluation.remarks}` : ''}</small>}
+              {submission.content && <small>{submission.content}</small>}
+            </div>
+            {submission.submissionFile?.gridFsFileId && <Button type="button" variant="quiet" onClick={() => downloadSubmissionFile(submission).catch((error) => notify(error.message || 'Could not download your submission.'))}>Download PDF</Button>}
+          </div>;
+        })}
+      </div>}
+    </section></>;
 }
 
 function OriginalPdfPanel({ notify }) {
@@ -445,6 +541,35 @@ function OriginalPdfPanel({ notify }) {
     }
   };
   return <><section className="pdf-panel" id="original-pdf"><div className="pdf-panel-head"><span className="pdf-icon"><FileText size={18} /></span><span><strong>Original practical PDF</strong><small>Teacher-uploaded source file</small></span><MoreHorizontal size={18} /></div><div className="pdf-preview"><FileText size={35} /><strong>{pdfId ? 'Original handout attached' : 'No PDF attached'}</strong><span>Stored in MongoDB GridFS</span></div><div className="pdf-actions"><Button variant="secondary" icon={pdfLoading ? LoaderCircle : ArrowRight} onClick={openPdf} disabled={!pdfId || pdfLoading || Boolean(previewUrl)}>{pdfLoading ? 'Opening...' : previewUrl ? 'PDF open' : 'Open PDF'}</Button><Button variant="quiet" icon={ArrowDownToLine} onClick={downloadPdf} disabled={!pdfId}>Download</Button></div></section>{previewUrl && <div className="pdf-viewer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewUrl(''); }}><section className="pdf-viewer-dialog" role="dialog" aria-modal="true" aria-label="Original practical PDF"><header className="pdf-viewer-header"><span><FileText size={18} /><strong>Original practical PDF</strong></span><button className="icon-button" type="button" onClick={() => setPreviewUrl('')} aria-label="Close PDF preview"><X size={18} /></button></header><iframe className="pdf-viewer-frame" src={previewUrl} title="Original practical PDF" /></section></div>}</>;
+}
+
+function InlineOriginalPdf({ pdfId }) {
+  const [pdfUrl, setPdfUrl] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  useEffect(() => {
+    let active = true;
+    let objectUrl = '';
+    pdfService.view(pdfId).then((url) => {
+      objectUrl = url;
+      if (active) setPdfUrl(url);
+      else URL.revokeObjectURL(url);
+    }).catch((error) => {
+      if (active) setLoadError(error.message || 'Could not load the original handout.');
+    }).finally(() => {
+      if (active) setLoading(false);
+    });
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [pdfId]);
+  return <section className="inline-pdf-source" aria-label="Original practical handout">
+    <div className="inline-pdf-heading"><FileText size={17} /><div><strong>Original practical handout</strong><span>Teacher-uploaded source PDF</span></div></div>
+    {loading && <div className="inline-pdf-status"><LoaderCircle size={16} className="inline-pdf-spinner" />Loading the original handout...</div>}
+    {loadError && <p className="inline-pdf-error">{loadError}</p>}
+    {pdfUrl && <iframe className="inline-pdf-frame" src={pdfUrl} title="Original practical handout PDF" />}
+  </section>;
 }
 
 function StudentBookmarks({ practicalList, bookmarkedIds, subjectList = [] }) {
@@ -1728,13 +1853,118 @@ function TeacherSubjects({ subjectList = [], onAssigned, notify }) {
   </>;
 }
 
-function TeacherPracticalList({ practicalList, subjectList = [], subjectIds, onDelete, onTogglePublish, notify }) {
+function TeacherPracticalList({ practicalList, subjectList = [], subjectIds, submissionList = [], onDelete, onTogglePublish, onRefresh, notify }) {
   const [filter, setFilter] = useState('All');
   const [query, setQuery] = useState('');
   const navigate = useNavigate();
+  const refreshClasswork = async () => {
+    try {
+      await onRefresh();
+      notify('Classwork status refreshed.');
+    } catch (error) {
+      notify(error.message || 'Could not refresh classwork status.');
+    }
+  };
   const subjects = subjectList.map(normalizeSubjectFromApi).filter(Boolean);
   const rows = (practicalList || []).map(normalizePracticalFromApi).filter(Boolean).filter((item) => subjectIds.has(String(item.subjectId))).filter((item) => (filter === 'All' || (filter === 'Published' ? item.published : !item.published)) && (item.title || '').toLowerCase().includes(query.toLowerCase()));
-  return <><PageHeading eyebrow="CONTENT MANAGEMENT" title="Practicals" description="Review, publish and maintain your practical material." actions={<Link to="/teacher/practicals/add" className="button button-primary"><Plus size={16} />Add practical</Link>} /><div className="table-toolbar"><label className="field-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search practicals" /></label><div className="segmented-control">{['All', 'Published', 'Drafts'].map((value) => <button key={value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value}</button>)}</div></div><div className="surface data-table-wrap"><table className="data-table"><thead><tr><th>Practical</th><th>Subject</th><th>Source PDF</th><th>Status</th><th>Last updated</th><th /></tr></thead><tbody>{rows.map((item) => <tr key={item.id}><td><span className="table-title"><b>{number(item.practicalNumber)}</b><span><strong>{item.title}</strong><small>Practical {number(item.practicalNumber)}</small></span></span></td><td>{subjects.find((subject) => subject.id === item.subjectId)?.name || item.subjectId}</td><td><span className="file-label"><FileText size={15} />Original PDF</span></td><td><Status>{item.published ? 'Published' : 'Draft'}</Status></td><td>{item.updatedAt || '—'}</td><td><div className="table-actions"><button className="icon-button" title="Edit practical" onClick={() => navigate(`/teacher/practicals/${item.id}/edit`)}><Pencil size={15} /></button><button className="icon-button" title={item.published ? 'Unpublish' : 'Publish'} onClick={() => onTogglePublish(item)}><CheckCircle2 size={15} /></button><button className="icon-button danger-action" title="Delete practical" onClick={() => { if (window.confirm(`Delete ${item.title}?`)) onDelete(item.id); }}><X size={15} /></button></div></td></tr>)}</tbody></table>{!rows.length && <EmptyState title="No practicals found" text="Try another search or create a new practical." icon={ClipboardList} />}</div></>;
+  return <><PageHeading eyebrow="CONTENT MANAGEMENT" title="Practicals" description="Publish practicals, monitor student submissions and review classwork." actions={<><Button variant="secondary" icon={RefreshCw} onClick={refreshClasswork}>Refresh classwork</Button><Link to="/teacher/practicals/add" className="button button-primary"><Plus size={16} />Add practical</Link></>} /><div className="table-toolbar"><label className="field-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search practicals" /></label><div className="segmented-control">{['All', 'Published', 'Drafts'].map((value) => <button key={value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value}</button>)}</div></div><div className="surface data-table-wrap"><table className="data-table"><thead><tr><th>Practical</th><th>Subject</th><th>Submissions</th><th>Status</th><th>Last updated</th><th /></tr></thead><tbody>{rows.map((item) => { const submissions = submissionList.filter((entry) => recordId(entry.practicalId) === String(item.id)); const waiting = submissions.filter((entry) => entry.status === 'Submitted').length; return <tr key={item.id}><td><span className="table-title"><b>{number(item.practicalNumber)}</b><span><strong>{item.title}</strong><small>Practical {number(item.practicalNumber)}</small></span></span></td><td>{subjects.find((subject) => subject.id === item.subjectId)?.name || item.subjectId}</td><td><strong>{submissions.length}</strong><small>{waiting} awaiting review</small></td><td><Status>{item.published ? 'Published' : 'Draft'}</Status></td><td>{item.updatedAt || '—'}</td><td><div className="table-actions"><button className="icon-button" title="Open classroom" onClick={() => navigate(`/teacher/practicals/${item.id}`)}><Users size={15} /></button><button className="icon-button" title="Edit practical" onClick={() => navigate(`/teacher/practicals/${item.id}/edit`)}><Pencil size={15} /></button><button className="icon-button" title={item.published ? 'Unpublish' : 'Publish'} onClick={() => onTogglePublish(item)}><CheckCircle2 size={15} /></button><button className="icon-button danger-action" title="Delete practical" onClick={() => { if (window.confirm(`Delete ${item.title}?`)) onDelete(item.id); }}><X size={15} /></button></div></td></tr>; })}</tbody></table>{!rows.length && <EmptyState title="No practicals found" text="Try another search or create a new practical." icon={ClipboardList} />}</div></>;
+}
+
+function TeacherSubmissionReview({ submission, evaluation, onSave }) {
+  const [fields, setFields] = useState({ maximumMarks: 100, passingMarks: 35, marksObtained: '', remarks: '', requestResubmission: false });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setFields({
+      maximumMarks: evaluation?.maximumMarks ?? 100,
+      passingMarks: evaluation?.passingMarks ?? 35,
+      marksObtained: evaluation?.marksObtained ?? '',
+      remarks: evaluation?.remarks ?? submission.remarks ?? '',
+      requestResubmission: submission.status === 'Resubmission Required'
+    });
+  }, [evaluation, submission]);
+  const update = (key) => (event) => setFields((current) => ({ ...current, [key]: event.target.type === 'checkbox' ? event.target.checked : event.target.value }));
+  const submitReview = async (event) => {
+    event.preventDefault();
+    setError('');
+    setSaving(true);
+    try {
+      await onSave({ submissionId: recordId(submission), ...fields });
+    } catch (saveError) {
+      setError(saveError.message || 'Could not save the evaluation.');
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <article className="surface dashboard-panel">
+    <div className="panel-heading"><div><p className="eyebrow">ATTEMPT {submission.attempt}</p><h3>{submission.studentId?.name || 'Student'}</h3><p className="page-description">{submission.studentId?.email || ''} · {new Date(submission.submissionDate || submission.createdAt).toLocaleString()}</p></div><Status>{submission.status}</Status></div>
+    {submission.content && <p>{submission.content}</p>}
+    {submission.submissionFile?.gridFsFileId && <Button type="button" variant="secondary" icon={Download} onClick={() => downloadSubmissionFile(submission).catch((downloadError) => setError(downloadError.message || 'Could not download this submission.'))}>Download student PDF</Button>}
+    {evaluation && <p className="review-note">Current result: {evaluation.marksObtained}/{evaluation.maximumMarks} · {evaluation.resultStatus}</p>}
+    <form className="form-grid" onSubmit={submitReview}>
+      <label className="form-field"><span>Maximum marks</span><input type="number" min="1" step="any" required value={fields.maximumMarks} onChange={update('maximumMarks')} /></label>
+      <label className="form-field"><span>Passing marks</span><input type="number" min="0" step="any" required value={fields.passingMarks} onChange={update('passingMarks')} /></label>
+      <label className="form-field"><span>Marks obtained</span><input type="number" min="0" step="any" required value={fields.marksObtained} onChange={update('marksObtained')} /></label>
+      <label className="form-field form-field-wide"><span>Feedback / remarks</span><textarea rows="3" value={fields.remarks} onChange={update('remarks')} placeholder="Share feedback with the student" /></label>
+      <label className="setting-toggle form-field-wide"><span><strong>Request resubmission</strong><small>Allow the student to submit another attempt after this review.</small></span><input type="checkbox" checked={fields.requestResubmission} onChange={update('requestResubmission')} /></label>
+      {error && <p className="admin-modal-error form-field-wide" role="alert">{error}</p>}
+      <div className="admin-modal-actions form-field-wide"><Button type="submit" disabled={saving}>{saving ? 'Saving...' : evaluation ? 'Update evaluation' : 'Save evaluation'}</Button></div>
+    </form>
+  </article>;
+}
+
+function TeacherPracticalDetail({ practical, onTogglePublish, onRefresh, notify }) {
+  const [submissions, setSubmissions] = useState([]);
+  const [evaluations, setEvaluations] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    setLoadError('');
+    Promise.all([submissionService.getByPractical(practical.id), evaluationService.getByPractical(practical.id)])
+      .then(([submissionResponse, evaluationResponse]) => {
+        if (!active) return;
+        setSubmissions(submissionResponse?.data?.submissions || []);
+        setEvaluations(evaluationResponse?.data?.evaluations || []);
+      })
+      .catch((error) => {
+        if (active) setLoadError(error.message || 'Unable to load classroom submissions.');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [practical.id, reloadKey]);
+  const saveEvaluation = async (payload) => {
+    await evaluationService.save(payload);
+    setReloadKey((key) => key + 1);
+    try {
+      await onRefresh();
+      notify(payload.requestResubmission ? 'Evaluation saved; the student may resubmit.' : 'Evaluation saved successfully.');
+    } catch (error) {
+      notify(`Evaluation saved, but class totals could not be refreshed: ${error.message || 'please refresh the practical list.'}`);
+    }
+  };
+  const waiting = submissions.filter((entry) => entry.status === 'Submitted').length;
+  const guideDetails = [
+    ['Aim', practical.aim],
+    ['About', practical.about],
+    ['Requirements', practical.requirements],
+    ['Concept / theory', practical.concept],
+    ['Procedure', practical.procedure],
+    ['Task', practical.task],
+    ['Expected output', practical.expectedOutput],
+    ['Important points', practical.importantPoints],
+    ['Viva questions', practical.vivaQuestions]
+  ].filter(([, value]) => Array.isArray(value) ? value.some((line) => String(line).trim()) : String(value || '').trim());
+  return <>
+    <PageHeading eyebrow="PRACTICAL CLASSROOM" title={practical.title} description={`Practical ${number(practical.practicalNumber)} · Review student work and return marks with feedback.`} actions={<><Link to={`/teacher/practicals/${practical.id}/edit`} className="button button-secondary"><Pencil size={15} />Edit practical</Link><Button variant="secondary" icon={Download} onClick={() => pdfService.download(practical.pdfId).catch((error) => notify(error.message || 'Could not download the original PDF.'))} disabled={!practical.pdfId}>Original PDF</Button><Button onClick={() => onTogglePublish(practical)}>{practical.published ? 'Unpublish' : 'Publish'}</Button></>} />
+    <div className="stat-grid stat-grid-small"><Stat label="Student attempts" value={submissions.length} icon={Users} /><Stat label="Awaiting review" value={waiting} icon={Clock3} tone="amber" /><Stat label="Evaluated" value={evaluations.length} icon={CheckCircle2} tone="green" /></div>
+    {guideDetails.length > 0 && <section className="surface practical-preview"><h2>Student learning guide</h2>{guideDetails.map(([label, value]) => <p key={label}><strong>{label}</strong><br />{Array.isArray(value) ? value.filter((line) => String(line).trim()).join('\n') : value}</p>)}</section>}
+    {loading ? <EmptyState title="Loading classroom..." text="Retrieving student submissions and evaluations." icon={Activity} /> : loadError ? <EmptyState title="Unable to load classroom" text={loadError} icon={Activity} action={<Button onClick={() => setReloadKey((key) => key + 1)}>Try again</Button>} /> : submissions.length ? <div className="submission-history">{submissions.map((submission) => <TeacherSubmissionReview key={recordId(submission)} submission={submission} evaluation={evaluations.find((entry) => recordId(entry.submissionId) === recordId(submission))} onSave={saveEvaluation} />)}</div> : <EmptyState title="No student work yet" text="Published practicals will show student submissions here as they arrive." icon={ClipboardList} />}
+  </>;
 }
 
 function TeacherPracticalForm({ onSave, practicalList, notify, practicalId, isEdit = false }) {
@@ -1987,10 +2217,13 @@ export default function PortalExperience() {
   const [practicalList, setPracticalList] = useState([]);
   const [studentSubjectList, setStudentSubjectList] = useState([]);
   const [studentPracticalList, setStudentPracticalList] = useState([]);
+  const [studentSubmissionList, setStudentSubmissionList] = useState([]);
+  const [studentEvaluationList, setStudentEvaluationList] = useState([]);
   const [completedIds, setCompletedIds] = useState([]);
   const [progressRecords, setProgressRecords] = useState([]);
   const [teacherSubjectList, setTeacherSubjectList] = useState([]);
   const [teacherPracticalList, setTeacherPracticalList] = useState([]);
+  const [teacherSubmissionList, setTeacherSubmissionList] = useState([]);
   const [teacherStudentList, setTeacherStudentList] = useState([]);
   const [adminTeacherList, setAdminTeacherList] = useState([]);
   const [adminStudentList, setAdminStudentList] = useState([]);
@@ -2020,14 +2253,16 @@ export default function PortalExperience() {
   }, []);
 
   const refreshTeacherData = async () => {
-    const [subjectResponse, practicalResponse, studentResponse] = await Promise.all([
+    const [subjectResponse, practicalResponse, studentResponse, submissionResponse] = await Promise.all([
       teacherService.getSubjects(),
       teacherService.getPracticals(),
-      teacherService.getStudents()
+      teacherService.getStudents(),
+      submissionService.getAll()
     ]);
     setTeacherSubjectList(subjectResponse?.data?.subjects || []);
     setTeacherPracticalList(practicalResponse?.data?.practicals || []);
     setTeacherStudentList(studentResponse?.data?.students || []);
+    setTeacherSubmissionList(submissionResponse?.data?.submissions || []);
   };
 
   useEffect(() => {
@@ -2058,16 +2293,20 @@ export default function PortalExperience() {
       let loaded = false;
       try {
         if (user.role === 'student') {
-          const [subjectResponse, practicalResponse, progressResponse, bookmarkResponse] = await Promise.all([
+          const [subjectResponse, practicalResponse, progressResponse, bookmarkResponse, submissionResponse, evaluationResponse] = await Promise.all([
             api.get('/student/subjects'),
             api.get('/student/practicals'),
             progressService.getAll(),
-            bookmarkService.getAll()
+            bookmarkService.getAll(),
+            submissionService.getStudent(),
+            evaluationService.getStudent()
           ]);
 
           if (dataLoadRef.current.identity !== identity) return;
           setStudentSubjectList(subjectResponse?.data?.subjects || []);
           setStudentPracticalList(practicalResponse?.data?.practicals || []);
+          setStudentSubmissionList(submissionResponse?.data?.submissions || []);
+          setStudentEvaluationList(evaluationResponse?.data?.evaluations || []);
           const loadedProgress = progressResponse?.data?.progress || [];
           setProgressRecords(loadedProgress);
           setCompletedIds(loadedProgress.map((item) => String(item.practicalId?._id || item.practicalId)));
@@ -2196,9 +2435,9 @@ export default function PortalExperience() {
     if (route.startsWith('/academic-documents')) page = <AcademicDocumentsPage role={role} notify={notify} />;
     else if (route === '/dashboard') page = <StudentDashboard user={user} practicalList={activeStudentPracticals} bookmarkedIds={bookmarkedIds} subjectList={activeStudentSubjects} completedIds={completedIds} progressRecords={progressRecords} notify={notify} />;
     else if (route === '/subjects') page = <StudentSubjects user={user} practicalList={activeStudentPracticals} subjectList={activeStudentSubjects} completedIds={completedIds} />;
-    else if (subjectMatch) page = <StudentSubjectDetail subjectId={subjectMatch[1]} subjectList={activeStudentSubjects} completedIds={completedIds} />;
-    else if (route === '/practicals') page = <StudentPracticals practicalList={activeStudentPracticals} subjectList={activeStudentSubjects} completedIds={completedIds} />;
-    else if (practicalMatch) page = <StudentPracticalDetail practicalId={practicalMatch[1]} bookmarkedIds={bookmarkedIds} toggleBookmark={toggleBookmark} completePractical={completePractical} notify={notify} subjectList={activeStudentSubjects} completedIds={completedIds} />;
+    else if (subjectMatch) page = <StudentSubjectDetail subjectId={subjectMatch[1]} subjectList={activeStudentSubjects} completedIds={completedIds} submissionList={studentSubmissionList} />;
+    else if (route === '/practicals') page = <StudentPracticals practicalList={activeStudentPracticals} subjectList={activeStudentSubjects} completedIds={completedIds} submissionList={studentSubmissionList} />;
+    else if (practicalMatch) page = <StudentPracticalDetail practicalId={practicalMatch[1]} bookmarkedIds={bookmarkedIds} toggleBookmark={toggleBookmark} completePractical={completePractical} notify={notify} subjectList={activeStudentSubjects} completedIds={completedIds} submissionList={studentSubmissionList} evaluationList={studentEvaluationList} onSubmitted={(submission) => setStudentSubmissionList((current) => [submission, ...current.filter((item) => recordId(item) !== recordId(submission))])} />;
     else if (route === '/notes') page = <NotesPage />;
     else if (noteMatch) page = <StudentNoteDetail noteId={noteMatch[1]} />;
     else if (route === '/bookmarks') page = <StudentBookmarks practicalList={activeStudentPracticals} bookmarkedIds={bookmarkedIds} subjectList={activeStudentSubjects} />;
@@ -2211,15 +2450,16 @@ export default function PortalExperience() {
     if (route.startsWith('/academic-documents')) page = <AcademicDocumentsPage role={role} notify={notify} />;
     else if (route === '/dashboard') page = <TeacherDashboard practicalList={teacherPracticals} user={user} subjectList={teacherSubjects} />;
     else if (route === '/subjects') page = <TeacherSubjects subjectList={teacherSubjects} onAssigned={refreshTeacherData} notify={notify} />;
-    else if (route === '/practicals') page = <TeacherPracticalList practicalList={teacherPracticals} subjectList={teacherSubjects} subjectIds={new Set(teacherSubjects.map((item) => String(item._id || item.id)))} onDelete={deletePractical} onTogglePublish={togglePublished} notify={notify} />;
+    else if (route === '/practicals') page = <TeacherPracticalList practicalList={teacherPracticals} subjectList={teacherSubjects} subjectIds={new Set(teacherSubjects.map((item) => String(item._id || item.id)))} submissionList={teacherSubmissionList} onDelete={deletePractical} onTogglePublish={togglePublished} onRefresh={refreshTeacherData} notify={notify} />;
     else if (route === '/practicals/add') page = <TeacherPracticalModal user={user} notify={notify} onSaved={refreshTeacherData} />;
     else if (route.endsWith('/edit')) { const item = teacherPracticals.find((practical) => String(practical._id || practical.id) === String(practicalMatch?.[1])); page = <TeacherPracticalModal practical={item} user={user} notify={notify} onSaved={refreshTeacherData} />; }
-    else if (practicalMatch) { const item = teacherPracticals.map(normalizePracticalFromApi).filter(Boolean).find((practical) => String(practical.id) === String(practicalMatch[1])); page = <><PageHeading eyebrow="PRACTICAL DETAIL" title={item?.title || 'Practical'} description="Review the original file and generated student learning guide." actions={<Link to={`/teacher/practicals/${item?.id}/edit`} className="button button-secondary"><Pencil size={15} />Edit practical</Link>} /><div className="surface practical-preview"><h2>Student learning guide</h2><p><strong>Aim</strong><br />{item?.aim}</p><p><strong>About</strong><br />{item?.about}</p><div className="pdf-actions"><Button variant="secondary" onClick={() => notify('Original PDF preview is available after upload.')}>Open original PDF</Button><Button onClick={() => togglePublished(item)}>{item?.published ? 'Unpublish' : 'Publish'}</Button></div></div></>; }
+    else if (practicalMatch) { const item = teacherPracticals.map(normalizePracticalFromApi).filter(Boolean).find((practical) => String(practical.id) === String(practicalMatch[1])); page = item ? <TeacherPracticalDetail practical={item} onTogglePublish={togglePublished} onRefresh={refreshTeacherData} notify={notify} /> : <EmptyState title="Practical not found" text="This practical may no longer be available in your teaching workspace." action={<Link to="/teacher/practicals" className="text-link">Back to practicals</Link>} />; }
     else if (route === '/students') page = <TeacherStudents studentList={teacherStudentList} />;
     else if (route === '/profile') page = <ProfilePage user={user} role={role} notify={notify} />;
   } else if (role === 'admin') {
     if (route === '/dashboard') page = <AdminDashboard practicalList={practicalList} teacherList={adminTeacherList} studentList={adminStudentList} catalog={adminCatalog} subjectList={adminSubjectList} adminNotifications={adminNotifications} />;
     else if (route === '/students') page = <AdminStudentDirectory />;
+    else if (route === '/team') page = <TeamManagementPage />;
     else if (route === '/notes') page = <AdminNotesPage notify={notify} />;
     else if (['/departments', '/years', '/semesters', '/subjects', '/teachers', '/practicals'].includes(route)) page = <AdminManagement page={route.slice(1)} practicalList={practicalList} notify={notify} />;
     else if (route === '/notifications') page = <AdminNotificationsPage items={adminNotifications} onMarkRead={markNotificationRead} />;

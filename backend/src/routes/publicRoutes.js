@@ -3,8 +3,12 @@ import Department from '../models/Department.js';
 import Year from '../models/Year.js';
 import Semester from '../models/Semester.js';
 import { successResponse } from '../utils/apiResponse.js';
+import { getPublicTeamMembers, getTeamMemberPhoto } from '../controllers/teamMemberController.js';
 
 const router = express.Router();
+
+router.get('/team-members', getPublicTeamMembers);
+router.get('/team-members/:id/photo', getTeamMemberPhoto);
 
 router.get('/departments', async (_req, res, next) => {
   try {

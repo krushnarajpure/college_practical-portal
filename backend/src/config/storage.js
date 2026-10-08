@@ -11,7 +11,7 @@ export const storageConfig = {
   profilePhotoMaxFileSize: 5 * 1024 * 1024,
   allowedMimeTypes: ['application/pdf'],
   supportedExtensions: ['.pdf'],
-  profilePhotoAllowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
+  profilePhotoAllowedMimeTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
   profilePhotoSupportedExtensions: ['.jpg', '.jpeg', '.png', '.webp']
 };
 
