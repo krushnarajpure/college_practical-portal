@@ -24,6 +24,7 @@ import {
 } from '../controllers/noteController.js';
 import { getAdminStorage } from '../controllers/adminController.js';
 import { notePdfUpload } from '../middleware/noteUploadMiddleware.js';
+import { createNotePaymentOrder, verifyNotePayment } from '../controllers/notePaymentController.js';
 
 const router = express.Router();
 
@@ -31,6 +32,8 @@ router.use(authenticateUser);
 router.get('/notes', requireRole('student'), listStudentNotes);
 router.get('/student/notes', requireRole('student'), listStudentNotes);
 router.get('/student/notes/assistant/search', requireRole('student'), searchStudentNotesForAssistant);
+router.post('/notes/payments/orders', requireRole('student'), createNotePaymentOrder);
+router.post('/notes/payments/verify', requireRole('student'), verifyNotePayment);
 router.get('/student/notes/:noteId/text', requireRole('student'), readStudentNoteTextForAssistant);
 router.get('/student/notes/:noteId', requireRole('student'), getStudentNote);
 router.get('/student/notes/:noteId/view', requireRole('student'), streamStudentNote);

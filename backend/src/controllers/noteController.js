@@ -3,6 +3,7 @@ import path from 'path';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import Note from '../models/Note.js';
 import NoteFolder from '../models/NoteFolder.js';
+import NotePayment from '../models/NotePayment.js';
 import { getAcademicNoteBucket } from '../config/storage.js';
 import { streamDriveFileContent, syncGoogleDriveNotes } from '../services/googleDriveNoteService.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
@@ -38,6 +39,25 @@ const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const isValidObjectId = (value) => mongoose.Types.ObjectId.isValid(value);
 const safeFileName = (value) => String(value || 'note').replace(/[\\/:*?"<>|\r\n]/g, '_');
 const getNoteFolderRoot = (note) => note.folderPathSegments?.[0] || 'Notes';
+const noteIsPaid = (note) => note.accessType === 'paid';
+
+async function getPurchasedNoteIds(studentId, notes) {
+  const noteIds = notes.filter(noteIsPaid).map((note) => note._id);
+  if (!noteIds.length) return new Set();
+  const purchases = await NotePayment.find({ studentId, noteId: { $in: noteIds }, status: 'captured' }).select('noteId').lean();
+  return new Set(purchases.map((purchase) => String(purchase.noteId)));
+}
+
+async function studentHasNoteAccess(studentId, note) {
+  if (!noteIsPaid(note)) return true;
+  return Boolean(await NotePayment.exists({ studentId, noteId: note._id, status: 'captured' }));
+}
+
+function noteDtoWithAccess(note, purchasedIds) {
+  const dto = sanitizeNote(note);
+  if (dto.accessType !== 'paid') return { ...dto, hasAccess: true };
+  return { ...dto, hasAccess: purchasedIds?.has(String(dto._id)) || false };
+}
 const parseVisibility = (value) => {
   if (value === undefined) return false;
   if (value === true || value === 'true') return true;
@@ -124,7 +144,7 @@ export const syncNotesFromDrive = async (_req, res, next) => {
   }
 };
 
-export const listStudentNotes = async (_req, res, next) => {
+export const listStudentNotes = async (req, res, next) => {
   try {
     const notes = await Note.find({
       isActive: true,
@@ -132,6 +152,7 @@ export const listStudentNotes = async (_req, res, next) => {
       fileType: { $ne: 'folder' },
       $or: [{ isPublic: true }, { isPublic: { $exists: false } }]
     }).sort({ updatedAt: -1 });
+    const purchasedIds = await getPurchasedNoteIds(req.user.id, notes);
 
     const categoryCounts = notes.reduce((counts, note) => {
       const category = note.category || 'General';
@@ -147,7 +168,7 @@ export const listStudentNotes = async (_req, res, next) => {
         const segments = [...(dto.folderPathSegments || [])];
         if (segments[0] === 'Notes') segments[0] = driveRootName;
         return {
-          ...dto,
+          ...noteDtoWithAccess(dto, purchasedIds),
           folderPathSegments: segments,
           folderPath: segments.join('/') || driveRootName
         };
@@ -160,16 +181,31 @@ export const listStudentNotes = async (_req, res, next) => {
   }
 };
 
-export const listDashboardNotes = async (_req, res, next) => {
+export const listDashboardNotes = async (req, res, next) => {
   try {
-    const notes = await Note.find({
+    const filter = {
       isActive: true,
       isDeleted: { $ne: true },
       fileType: { $ne: 'folder' },
       $or: [{ isPublic: true }, { isPublic: { $exists: false } }]
-    }).sort({ updatedAt: -1 }).limit(6).lean();
+    };
+    let purchasedIds = new Set();
+    if (req.user.role === 'student') {
+      const purchases = await NotePayment.find({ studentId: req.user.id, status: 'captured' }).select('noteId').lean();
+      purchasedIds = new Set(purchases.map((purchase) => String(purchase.noteId)));
+      filter.$and = [{
+        $or: [
+          { accessType: { $ne: 'paid' } },
+          { _id: { $in: [...purchasedIds] } }
+        ]
+      }];
+    }
+    const visibleNotes = await Note.find(filter).sort({ updatedAt: -1 }).limit(6).lean();
     return res.status(200).json(successResponse('Shared dashboard notes retrieved.', {
-      notes: notes.map(sanitizeNote)
+      notes: visibleNotes.map((note) => ({
+        ...sanitizeNote(note),
+        hasAccess: req.user.role !== 'student' || !noteIsPaid(note) || purchasedIds.has(String(note._id))
+      }))
     }));
   } catch (error) {
     next(error);
@@ -273,6 +309,8 @@ export const updateAdminNote = async (req, res, next) => {
       return res.status(400).json(errorResponse('Invalid note id.', 'Bad Request', 400));
     }
 
+    const existingNote = await Note.findOne({ _id: noteId, isDeleted: { $ne: true } });
+    if (!existingNote) return res.status(404).json(errorResponse('Note not found.', 'Not Found', 404));
     const updates = {};
     if (Object.hasOwn(req.body || {}, 'title')) {
       const title = String(req.body.title || '').trim();
@@ -287,6 +325,25 @@ export const updateAdminNote = async (req, res, next) => {
       }
       updates.isPublic = req.body.isPublic;
     }
+    if (Object.hasOwn(req.body || {}, 'accessType')) {
+      if (!['free', 'paid'].includes(req.body.accessType)) {
+        return res.status(400).json(errorResponse('accessType must be free or paid.', 'Bad Request', 400));
+      }
+      updates.accessType = req.body.accessType;
+    }
+    const requestedAccessType = updates.accessType || existingNote.accessType || 'free';
+    if (Object.hasOwn(req.body || {}, 'pricePaise') || requestedAccessType === 'free') {
+      const pricePaise = requestedAccessType === 'free' ? 0 : Number(req.body.pricePaise);
+      if (!Number.isSafeInteger(pricePaise) || (requestedAccessType === 'paid' && pricePaise < 100)) {
+        return res.status(400).json(errorResponse('Paid notes must have a price of at least ₹1.00, provided as integer paise.', 'Bad Request', 400));
+      }
+      updates.pricePaise = pricePaise;
+    } else if (requestedAccessType === 'paid' && (!Number.isSafeInteger(existingNote.pricePaise) || existingNote.pricePaise < 100)) {
+      return res.status(400).json(errorResponse('Set a valid price before marking this note as paid.', 'Bad Request', 400));
+    }
+    if (requestedAccessType === 'paid' && existingNote.storageType === 'driveLink') {
+      return res.status(400).json(errorResponse('Google Drive links cannot be sold securely. Upload or create the note in the portal first.', 'Bad Request', 400));
+    }
     if (Object.hasOwn(req.body || {}, 'folderId')) {
       const folder = await resolveFolder(req.body.folderId);
       Object.assign(updates, folderFields(folder));
@@ -294,7 +351,7 @@ export const updateAdminNote = async (req, res, next) => {
     }
 
     if (!Object.keys(updates).length) {
-      return res.status(400).json(errorResponse('Provide a note title, folder, or public visibility to update.', 'Bad Request', 400));
+      return res.status(400).json(errorResponse('Provide a note title, folder, visibility, access type, or price to update.', 'Bad Request', 400));
     }
 
     const note = await Note.findOneAndUpdate(
@@ -303,7 +360,6 @@ export const updateAdminNote = async (req, res, next) => {
       { new: true, runValidators: true }
     );
     if (!note) return res.status(404).json(errorResponse('Note not found.', 'Not Found', 404));
-
     return res.status(200).json(successResponse('Note updated.', { note: sanitizeNote(note) }));
   } catch (error) {
     next(error);
@@ -353,7 +409,9 @@ export const getStudentNote = async (req, res, next) => {
       return res.status(404).json(errorResponse('Note not found.', 'Not Found', 404));
     }
 
-    return res.status(200).json(successResponse('Note retrieved.', { note: sanitizeNote(note) }));
+    return res.status(200).json(successResponse('Note retrieved.', {
+      note: { ...sanitizeNote(note), hasAccess: await studentHasNoteAccess(req.user.id, note) }
+    }));
   } catch (error) {
     next(error);
   }
@@ -381,12 +439,14 @@ export const searchStudentNotesForAssistant = async (req, res, next) => {
       }];
     }
     const notes = await Note.find(filter)
-      .select('title customTitle originalName fileType mimeType storageType size category folderPath description createdAt')
+      .select('title customTitle originalName fileType mimeType storageType size category folderPath description createdAt accessType')
       .sort({ updatedAt: -1 })
       .limit(20)
       .lean();
+    const purchasedIds = await getPurchasedNoteIds(req.user.id, notes);
+    const accessibleNotes = notes.filter((note) => !noteIsPaid(note) || purchasedIds.has(String(note._id)));
     return res.status(200).json(successResponse('Published notes search completed.', {
-      notes: notes.map((note) => ({
+      notes: accessibleNotes.map((note) => ({
         id: String(note._id),
         title: note.customTitle || note.title || note.originalName,
         fileType: note.fileType,
@@ -417,6 +477,9 @@ export const readStudentNoteTextForAssistant = async (req, res, next) => {
       $or: [{ isPublic: true }, { isPublic: { $exists: false } }]
     });
     if (!note) return res.status(404).json(errorResponse('Note not found.', 'Not Found', 404));
+    if (!(await studentHasNoteAccess(req.user.id, note))) {
+      return res.status(402).json(errorResponse('Purchase this note to use it with the study assistant.', 'PaymentRequired', 402));
+    }
 
     const fileName = note.customTitle || note.title || note.originalName || 'Note';
     if (note.storageType === 'driveLink') {
@@ -498,6 +561,9 @@ export const streamStudentNote = async (req, res, next) => {
     if (!note) {
       return res.status(404).json(errorResponse('Note not found.', 'Not Found', 404));
     }
+    if (!(await studentHasNoteAccess(req.user.id, note))) {
+      return res.status(402).json(errorResponse('Purchase this note before viewing or downloading it.', 'PaymentRequired', 402));
+    }
 
     await streamNoteFile(note, res, next, 'inline');
   } catch (error) {
@@ -517,6 +583,9 @@ export const streamDashboardNote = async (req, res, next) => {
       $or: [{ isPublic: true }, { isPublic: { $exists: false } }]
     });
     if (!note) return res.status(404).json(errorResponse('Shared note not found.', 'Not Found', 404));
+    if (req.user.role === 'student' && !(await studentHasNoteAccess(req.user.id, note))) {
+      return res.status(402).json(errorResponse('Purchase this note before viewing or downloading it.', 'PaymentRequired', 402));
+    }
     await streamNoteFile(note, res, next, 'inline');
   } catch (error) {
     next(error);

@@ -26,6 +26,8 @@ const noteSchema = new mongoose.Schema(
     viewMimeType: { type: String, default: 'application/pdf' },
     isActive: { type: Boolean, default: true },
     isPublic: { type: Boolean, default: true },
+    accessType: { type: String, enum: ['free', 'paid'], default: 'free' },
+    pricePaise: { type: Number, min: 0, default: 0 },
     isDeleted: { type: Boolean, default: false },
     uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
     lastSyncedAt: { type: Date, default: Date.now }

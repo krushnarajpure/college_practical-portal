@@ -46,5 +46,8 @@ export const env = {
   pdfPageRenderDpi,
   googleDriveFolderId: process.env.GOOGLE_DRIVE_FOLDER_ID || '',
   googleServiceAccountJson: toServiceAccountJson() || process.env.GOOGLE_SERVICE_ACCOUNT_JSON || '',
-  googleServiceAccountFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE || ''
+  googleServiceAccountFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE || '',
+  razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
+  razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
+  razorpayWebhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || ''
 };

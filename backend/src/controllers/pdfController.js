@@ -143,10 +143,16 @@ export const getStudentPdfText = async (req, res, next) => {
     for (let pageNumber = 1; pageNumber <= parsedPdf.numPages; pageNumber += 1) {
       const page = await parsedPdf.getPage(pageNumber);
       const content = await page.getTextContent();
-      const pageText = content.items
-        .filter((item) => 'str' in item && item.str.trim())
-        .map((item) => item.str.trim())
-        .join(' ');
+      let previousY = null;
+      const pageLines = [];
+      for (const item of content.items) {
+        if (!('str' in item) || !item.str.trim()) continue;
+        const y = item.transform?.[5];
+        const startsNewLine = previousY !== null && Number.isFinite(y) && Math.abs(previousY - y) > 2;
+        pageLines.push(`${startsNewLine ? '\n' : ' '}${item.str.trim()}`);
+        if (Number.isFinite(y)) previousY = y;
+      }
+      const pageText = pageLines.join('').trim();
       if (pageText) pages.push(pageText);
       page.cleanup();
     }

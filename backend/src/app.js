@@ -26,6 +26,7 @@ import myraaRoutes from './routes/myraaRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
 import academicDocumentRoutes from './routes/academicDocumentRoutes.js';
 import notesRoutes from './routes/notesRoutes.js';
+import { razorpayNotePaymentWebhook } from './controllers/notePaymentController.js';
 import { notFoundHandler, errorMiddleware } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -60,6 +61,7 @@ app.use(
     }
   })
 );
+app.post('/api/notes/payments/webhook', express.raw({ type: 'application/json' }), razorpayNotePaymentWebhook);
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 

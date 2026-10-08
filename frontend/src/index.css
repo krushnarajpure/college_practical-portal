@@ -2963,44 +2963,52 @@ textarea:focus-visible {
 
 .practical-detail-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 290px;
-  gap: 24px;
+  grid-template-columns: minmax(0, 920px);
+  justify-content: center;
+  gap: 18px;
   align-items: start;
 }
 
 .practical-article {
   min-width: 0;
-  padding: 23px 26px;
-  border: 1px solid #e0e7e9;
-  border-radius: 6px;
-  background: #fff;
+  padding: 30px 34px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--paper);
+  box-shadow: 0 12px 34px rgba(25, 56, 68, .055);
 }
 
 .practical-detail-head {
-  padding-bottom: 20px;
-  border-bottom: 1px solid #e8edef;
+  padding-bottom: 23px;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px 12px;
 }
 
-.practical-detail-head>.muted-inline {
-  margin-left: 8px;
+.practical-number-label {
+  width: fit-content;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--blue-soft);
+  color: var(--blue);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
 }
 
 .practical-detail-head h1 {
-  margin: 12px 0 5px;
+  grid-column: 1 / -1;
+  margin: 5px 0 3px;
   color: var(--ink-strong);
-  font: 700 23px/1.3 'Manrope', sans-serif;
-}
-
-.practical-detail-head>p {
-  max-width: 720px;
-  margin: 0;
-  color: #76868d;
-  font-size: 11px;
-  line-height: 1.7;
+  font: 800 27px/1.3 'Manrope', sans-serif;
 }
 
 .detail-actions {
-  margin-top: 16px;
+  grid-column: 1 / -1;
+  margin-top: 8px;
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
@@ -3013,14 +3021,12 @@ textarea:focus-visible {
 
 .guide-heading {
   margin-top: 20px;
-  padding: 14px 16px;
+  padding: 12px 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--blue-soft);
+  border-bottom: 1px solid var(--line);
 }
 
 .guide-heading .eyebrow {
@@ -3043,25 +3049,41 @@ textarea:focus-visible {
   flex: 0 0 auto;
 }
 
+.guide-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.guide-heading-actions .button {
+  min-height: 33px;
+  padding: 0 10px;
+  font-size: 10px;
+}
+
+.guide-heading-actions > svg {
+  color: var(--blue);
+}
+
 .guide-section-list {
   padding-top: 13px;
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
 .detail-section {
-  padding: 17px 16px;
+  padding: 17px 5px;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  gap: 12px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  background: var(--paper);
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 13px;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
 }
 
 .detail-section-number {
-  width: 27px;
-  height: 27px;
+  width: 29px;
+  height: 29px;
   display: grid;
   place-items: center;
   border-radius: 8px;
@@ -3072,7 +3094,7 @@ textarea:focus-visible {
 }
 
 .detail-section h2 {
-  margin: 2px 0 8px;
+  margin: 2px 0 9px;
   color: var(--ink-strong);
   font: 700 14px/1.4 'Manrope', sans-serif;
 }
@@ -3082,6 +3104,55 @@ textarea:focus-visible {
   color: var(--muted);
   font-size: 12px;
   line-height: 1.75;
+}
+
+.practical-document-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.practical-code-block {
+  overflow: hidden;
+  border: 1px solid #263b4b;
+  border-radius: 9px;
+  background: #10202c;
+}
+
+.practical-code-toolbar {
+  min-height: 42px;
+  padding: 6px 10px 6px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, .12);
+}
+
+.practical-code-toolbar > span {
+  color: #9cb2c0;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.practical-code-toolbar .button {
+  min-height: 29px;
+  padding: 0 9px;
+  border-color: rgba(255, 255, 255, .22);
+  background: transparent;
+  color: #e5eff4;
+  font-size: 10px;
+}
+
+.practical-code-block pre {
+  max-height: 540px;
+  margin: 0;
+  padding: 16px;
+  overflow: auto;
+  color: #d6e4ec;
+  font: 12px/1.75 'Cascadia Code', Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .detail-section p {
@@ -3202,6 +3273,65 @@ textarea:focus-visible {
   gap: 5px;
   font-size: 11px;
   font-weight: 700;
+}
+
+.guide-expand-button {
+  width: 100%;
+  min-height: 39px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--blue);
+  cursor: pointer;
+  font: 700 11px/1.4 'Manrope', sans-serif;
+}
+
+.guide-expand-button:hover {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.guide-expand-icon-open {
+  transform: rotate(180deg);
+}
+
+.practical-extracted-panel {
+  margin-top: 13px;
+  padding: 18px 19px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+}
+
+.practical-extracted-content {
+  max-height: 520px;
+  overflow: auto;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.practical-extracted-content p {
+  margin: 0;
+}
+
+.pdf-panel-compact {
+  display: grid;
+  gap: 13px;
+}
+
+.pdf-panel-compact .button {
+  width: 100%;
+  min-height: 36px;
+  justify-content: center;
 }
 
 .inline-pdf-source {
@@ -3485,6 +3615,11 @@ textarea:focus-visible {
 
 .original-file-mobile {
   display: none;
+}
+
+.original-file-mobile.practical-source-download {
+  display: block;
+  margin-top: 16px;
 }
 
 .notification-full {
@@ -4315,12 +4450,13 @@ textarea:focus-visible {
   }
 
   .practical-detail-layout {
-    grid-template-columns: minmax(0, 1fr) 245px;
+    grid-template-columns: minmax(0, 920px);
+    justify-content: center;
     gap: 14px;
   }
 
   .practical-article {
-    padding: 18px;
+    padding: 24px;
   }
 
   .myraa-workspace {
@@ -4925,11 +5061,11 @@ textarea:focus-visible {
   }
 
   .practical-article {
-    padding: 16px 13px;
+    padding: 19px 16px;
   }
 
   .practical-detail-head h1 {
-    font-size: 20px;
+    font-size: 22px;
   }
 
   .detail-actions .button {
@@ -7465,6 +7601,50 @@ body {
   overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 10px;
+}
+
+.admin-note-pricing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+  margin-top: 7px;
+}
+
+.admin-note-pricing label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.admin-note-pricing input,
+.admin-note-pricing select {
+  min-height: 32px;
+  max-width: 135px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+
+.admin-note-pricing .button {
+  min-height: 32px;
+  padding: 0 9px;
+  font-size: 10px;
+}
+
+.note-purchase-panel {
+  margin: 18px 0;
+}
+
+.note-purchase-panel > p {
+  margin: 10px 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .admin-note-actions {

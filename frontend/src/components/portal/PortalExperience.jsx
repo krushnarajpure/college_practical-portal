@@ -3,8 +3,8 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   Activity, ArrowDownToLine, ArrowLeft, ArrowRight, Bell, BookOpen, Bookmark, Database, Eye, EyeOff, HardDrive,
   Building2, Check, CheckCircle2, ChevronDown, ChevronRight, ClipboardList,
-  Clock3, Download, ExternalLink, FilePlus2, FileText, Filter, GraduationCap, LayoutDashboard,
-  Notebook,  LoaderCircle, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Settings, ShieldCheck,
+  Clock3, Copy, Download, ExternalLink, FilePlus2, FileText, Filter, GraduationCap, LayoutDashboard,
+  Notebook, LoaderCircle, LockKeyhole, LogOut, Menu, MoreHorizontal, Pencil, Plus, Search, Settings, ShieldCheck,
   Folder, FolderOpen, FolderPlus, Instagram, Link2, Maximize2, Minimize2, RefreshCw, Save, Sparkles, Trash2, Upload, Users, X
 } from 'lucide-react';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
@@ -35,6 +35,69 @@ const MyraaIntegrated = lazy(() => import('../../features/myraa/MyraaIntegrated'
 const roleHome = { admin: '/admin/dashboard', teacher: '/teacher/dashboard', student: '/student/dashboard' };
 const roleNames = { admin: 'Administrator', teacher: 'Teacher', student: 'Student' };
 const number = (value) => String(value).padStart(2, '0');
+const formatNotePrice = (pricePaise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(pricePaise || 0) / 100);
+
+async function openPaidNoteCheckout(noteId) {
+  const orderResponse = await api.post('/notes/payments/orders', { noteId });
+  const order = orderResponse?.data;
+  if (order?.alreadyOwned) return true;
+  if (!order?.orderId || !order?.keyId) throw new Error('The payment order response is incomplete.');
+  if (!window.Razorpay) {
+    await new Promise((resolve, reject) => {
+      const existingScript = document.querySelector('script[data-razorpay-checkout]');
+      if (existingScript) {
+        existingScript.addEventListener('load', resolve, { once: true });
+        existingScript.addEventListener('error', () => reject(new Error('Could not load secure checkout. Please try again.')), { once: true });
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      script.dataset.razorpayCheckout = 'true';
+      script.onload = resolve;
+      script.onerror = () => reject(new Error('Could not load secure checkout. Please try again.'));
+      document.body.appendChild(script);
+    });
+  }
+  if (!window.Razorpay) throw new Error('Secure checkout did not initialize. Please try again.');
+
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let verificationStarted = false;
+    const fail = (error) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
+    const checkout = new window.Razorpay({
+      key: order.keyId,
+      amount: order.amount,
+      currency: order.currency,
+      name: 'College Practical Portal',
+      description: order.noteTitle,
+      order_id: order.orderId,
+      handler: async (payment) => {
+        verificationStarted = true;
+        try {
+          await api.post('/notes/payments/verify', {
+            orderId: payment.razorpay_order_id,
+            paymentId: payment.razorpay_payment_id,
+            signature: payment.razorpay_signature
+          });
+          if (settled) return;
+          settled = true;
+          resolve(true);
+        } catch (error) {
+          fail(error);
+        }
+      },
+      modal: { ondismiss: () => { if (!verificationStarted) fail(new Error('Payment was cancelled. No access was granted.')); } },
+      theme: { color: '#2563eb' }
+    });
+    checkout.on('payment.failed', (event) => fail(new Error(event.error?.description || 'Payment failed. Please try again.')));
+    checkout.open();
+  });
+}
 
 const getNoteFolderSegments = (note) => Array.isArray(note.folderPathSegments) && note.folderPathSegments.length
   ? note.folderPathSegments
@@ -242,6 +305,75 @@ function normalizePracticalFromApi(practical) {
   };
 }
 
+const practicalGuideFieldByTitle = {
+  Aim: 'aim',
+  'About this practical': 'about',
+  'What you will learn': 'learn',
+  Requirements: 'requirements',
+  'Concept / theory': 'concept',
+  'Step-by-step procedure': 'procedure',
+  'Practical task': 'task',
+  'Expected output': 'expectedOutput',
+  'Important points': 'importantPoints',
+  'Common errors': 'commonErrors',
+  'Viva questions': 'vivaQuestions'
+};
+
+const practicalDocumentHeadings = [
+  ['Aim', /^aim\b\s*[:.\-]?\s*/i],
+  ['Objectives', /^objectives?\b\s*[:.\-]?\s*/i],
+  ['Requirements', /^(?:apparatus|materials|software|hardware)\s*(?:\/|and)?\s*(?:requirements?)?\b\s*[:.\-]?\s*/i],
+  ['Requirements', /^requirements?\b\s*[:.\-]?\s*/i],
+  ['Theory', /^(?:theory|concept)\b\s*[:.\-]?\s*/i],
+  ['Algorithm', /^algorithm\b\s*[:.\-]?\s*/i],
+  ['Program', /^(?:program(?:\s+code)?|source code|code)\b\s*[:.\-]?\s*/i],
+  ['Procedure', /^(?:procedure|steps?)\b\s*[:.\-]?\s*/i],
+  ['Sample output', /^(?:sample\s+)?output\b\s*[:.\-]?\s*/i],
+  ['Result', /^(?:result|conclusion)\b\s*[:.\-]?\s*/i],
+  ['Viva questions', /^(?:viva(?:\s+voce)?\s+questions?)\b\s*[:.\-]?\s*/i]
+];
+
+const institutionHeaderLine = /\b(?:college|university|institute|approved by|affiliated to|accredited by|accreditation|campus address)\b/i;
+
+function extractPracticalSections(text) {
+  const lines = String(text || '')
+    .replace(/\r/g, '\n')
+    .split(/\n+/)
+    .map((line) => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+  const firstSectionIndex = lines.findIndex((line) => practicalDocumentHeadings.some(([, pattern]) => pattern.test(line)));
+  const contentLines = (firstSectionIndex >= 0 ? lines.slice(firstSectionIndex) : lines)
+    .filter((line) => !institutionHeaderLine.test(line));
+  const sections = [];
+  let currentSection = null;
+
+  contentLines.forEach((line) => {
+    const normalizedLine = line.replace(/^\d+\s*[.)]\s*/, '');
+    const heading = practicalDocumentHeadings.find(([, pattern]) => pattern.test(normalizedLine));
+    if (heading) {
+      const [, title, pattern] = heading;
+      currentSection = { title, content: [] };
+      sections.push(currentSection);
+      const remainder = normalizedLine.replace(pattern, '').trim();
+      if (remainder) currentSection.content.push(remainder);
+    } else if (currentSection) {
+      currentSection.content.push(line);
+    } else if (!institutionHeaderLine.test(line)) {
+      if (!sections.length) sections.push({ title: 'Practical details', content: [] });
+      sections[0].content.push(line);
+    }
+  });
+
+  return sections
+    .map((section) => ({ ...section, text: section.content.join('\n').trim() }))
+    .filter((section) => section.text);
+}
+
+function getPracticalGuideText(practical, section) {
+  const value = practical[practicalGuideFieldByTitle[section.title]];
+  return Array.isArray(value) ? value.join('\n') : value || '';
+}
+
 function DashboardSharedNotes({ role }) {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -390,10 +522,14 @@ function StudentPracticals({ practicalList, subjectList = [], completedIds = [],
   return <><PageHeading eyebrow="LEARNING MATERIAL" title="Practicals" description="Browse published practicals, submit your work and track teacher feedback." /><div className="table-toolbar practical-toolbar"><label className="field-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search practicals" /></label><label className="practical-filter-select"><span className="sr-only">Filter by subject</span><select value={subjectFilter} onChange={(event) => setSubjectFilter(event.target.value)}><option value="All">All subjects</option>{subjectPool.map((subject) => <option key={subject.id} value={String(subject.id)}>{subject.name}</option>)}</select></label><label className="practical-filter-select"><span className="sr-only">Sort practicals</span><select value={sort} onChange={(event) => setSort(event.target.value)}><option value="sequence">Practical sequence</option><option value="title">Title A–Z</option></select></label><div className="segmented-control" aria-label="Filter practicals">{['All', 'Completed', 'Pending'].map((value) => <button key={value} className={filter === value ? 'selected' : ''} onClick={() => setFilter(value)}>{value}</button>)}</div><span className="muted-inline practical-result-count">{shown.length} results</span></div><section className="surface practical-list">{shown.map((item) => <PracticalRow key={item.id} practical={item} subject={subjectPool.find((entry) => String(entry.id) === String(item.subjectId))} completed={completedIds.includes(String(item.id))} submissionStatus={latestSubmissionFor(submissionList, item.id)?.status || 'Not Submitted'} onOpen={(practical) => navigate(`/student/practicals/${practical.id}`)} />)}{!shown.length && <EmptyState title="No practicals found" text={query || subjectFilter !== 'All' ? 'Try another search term or clear your filters.' : 'No practicals match this status yet.'} icon={Filter} />}</section></>;
 }
 
-function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, completePractical, notify, subjectList = [], completedIds = [], submissionList = [], evaluationList = [], onSubmitted }) {
+function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, completePractical, notify, completedIds = [], submissionList = [], evaluationList = [], onSubmitted }) {
   const [practical, setPractical] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [extractedPdfText, setExtractedPdfText] = useState('');
+  const [pdfTextError, setPdfTextError] = useState('');
+  const [pdfTextLoading, setPdfTextLoading] = useState(false);
+  const [showAllGuideSections, setShowAllGuideSections] = useState(false);
   const [submissionContent, setSubmissionContent] = useState('');
   const [submissionFile, setSubmissionFile] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -403,16 +539,41 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
     setLoading(true);
     setLoadError('');
     setPractical(null);
-    studentService.getPracticalById(practicalId).then((response) => {
-      if (active) setPractical(normalizePracticalFromApi(response?.data?.practical));
-    }).catch((error) => {
-      if (active) setLoadError(error.message || 'This practical is no longer available.');
-    }).finally(() => {
-      if (active) setLoading(false);
-    });
+    setExtractedPdfText('');
+    setPdfTextError('');
+    setPdfTextLoading(false);
+    setShowAllGuideSections(false);
+    const loadPractical = async () => {
+      try {
+        const response = await studentService.getPracticalById(practicalId);
+        const loadedPractical = normalizePracticalFromApi(response?.data?.practical);
+        if (!active) return;
+        setPractical(loadedPractical);
+        setLoading(false);
+        if (loadedPractical?.pdfId) {
+          setPdfTextLoading(true);
+          try {
+            const textResponse = await api.get(`/pdfs/${loadedPractical.pdfId}/text`);
+            const text = textResponse?.data?.text || '';
+            if (active) {
+              if (text.trim()) setExtractedPdfText(text);
+              else setPdfTextError('No selectable practical text was found in this handout. You can download the original PDF below.');
+            }
+          } catch (error) {
+            if (active) setPdfTextError(error.message || 'Text could not be extracted from the practical handout.');
+          } finally {
+            if (active) setPdfTextLoading(false);
+          }
+        }
+      } catch (error) {
+        if (active) setLoadError(error.message || 'This practical is no longer available.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    loadPractical();
     return () => { active = false; };
   }, [practicalId]);
-  const subject = subjectList.map(normalizeSubjectFromApi).filter(Boolean).find((item) => String(item.id) === String(practical?.subjectId));
   if (loading) return <EmptyState title="Loading practical..." text="Checking the latest published version." icon={Activity} />;
   if (loadError) return <EmptyState title="Practical unavailable" text={loadError} action={<Link to="/student/practicals" className="text-link">Browse practicals</Link>} />;
   if (!practical) return <EmptyState title="Practical not found" text="This practical may no longer be available." action={<Link to="/student/practicals" className="text-link">Browse practicals</Link>} />;
@@ -467,12 +628,61 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
     { title: 'Common errors', content: nonEmptyLines(practical.commonErrors).length > 0 && <ul>{nonEmptyLines(practical.commonErrors).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
     { title: 'Viva questions', content: nonEmptyLines(practical.vivaQuestions).length > 0 && <ol className="viva-list">{nonEmptyLines(practical.vivaQuestions).map((line, index) => <li key={`${index}-${line}`}><span>{number(index + 1)}</span>{line}</li>)}</ol> }
   ].filter((section) => section.content);
-  return <><div className="breadcrumbs"><Link to="/student/dashboard">Dashboard</Link><ChevronRight size={14} /><Link to={`/student/subjects/${subject?.id}`}>{subject?.name}</Link><ChevronRight size={14} /><span>Practical {number(practical.practicalNumber)}</span></div><div className="practical-detail-layout"><article className="practical-article"><div className="practical-detail-head"><Status>{completed ? 'Completed' : 'Available'}</Status><span className="muted-inline">{subject?.name} · Practical {number(practical.practicalNumber)}</span><h1>{practical.title}</h1><p>{guideSections.length ? "Follow the steps below, then use the original handout when you need the teacher's source material." : practical.pdfId ? 'The written guide is not available yet. View the original practical handout below.' : 'Your teacher has not added written instructions or a source file yet.'}</p><div className="detail-actions"><Button variant="secondary" icon={saved ? Check : Bookmark} onClick={() => { toggleBookmark(practical.id); notify(saved ? 'Bookmark removed.' : 'Bookmark added.'); }}>{saved ? 'Bookmarked' : 'Bookmark'}</Button><Button variant="secondary" icon={Download} onClick={() => pdfService.download(practical.pdfId).catch((error) => notify(error.message || 'Could not download the original PDF.'))} disabled={!practical.pdfId}>Download PDF</Button><Button onClick={() => completePractical(practical.id)} icon={CheckCircle2}>{completed ? 'Mark incomplete' : 'Mark complete'}</Button></div></div>
-    <div className="guide-heading"><div><span className="eyebrow">PRACTICAL GUIDE</span><p>{guideSections.length ? `${guideSections.length} sections · Read through the guide before you begin.` : 'Your teacher’s original handout is available below.'}</p></div><ClipboardList size={19} aria-hidden="true" /></div>
-    {guideSections.length > 0
-      ? <div className="guide-section-list">{guideSections.map((section, index) => <Section key={section.title} title={section.title} number={number(index + 1)}>{section.content}</Section>)}</div>
-      : <><div className="guide-empty-state"><div className="guide-empty-icon"><FileText size={20} /></div><div><h2>Practical guide is not available yet</h2><p>{practical.pdfId ? 'Your teacher has not added the written guide details. The original practical handout is shown below.' : 'Your teacher has not added the written guide or original handout yet. Please check back later.'}</p></div></div>{practical.pdfId && <InlineOriginalPdf pdfId={practical.pdfId} />}</>}
-    <div className="original-file-mobile"><OriginalPdfPanel notify={notify} /></div></article><aside className="detail-aside"><OriginalPdfPanel notify={notify} /><div className="aside-note"><ShieldCheck size={17} /><p><strong>Teacher source preserved</strong><br />This learning guide does not replace the original practical handout.</p></div></aside></div>
+  const parsedSections = extractPracticalSections(extractedPdfText);
+  const sectionAliases = {
+    Aim: ['Aim'],
+    Objectives: ['What you will learn'],
+    Requirements: ['Requirements'],
+    Theory: ['Concept / theory'],
+    Algorithm: [],
+    Program: [],
+    Procedure: ['Step-by-step procedure'],
+    'Sample output': ['Expected output'],
+    Result: ['Expected output'],
+    'Viva questions': ['Viva questions']
+  };
+  const additionalPdfSections = parsedSections
+    .filter((section) => !guideSections.some((existing) => (sectionAliases[section.title] || []).includes(existing.title)))
+    .map((section) => ({
+      title: section.title,
+      copyText: section.text,
+      content: section.title === 'Program'
+        ? <div className="practical-code-block"><div className="practical-code-toolbar"><span>PROGRAM</span><Button type="button" variant="secondary" icon={Copy} onClick={async () => { try { await navigator.clipboard.writeText(section.text); notify('Program copied.'); } catch { notify('Could not copy the program. Please allow clipboard access and try again.'); } }}>Copy code</Button></div><pre>{section.text}</pre></div>
+        : <p className="practical-document-text">{section.text}</p>
+    }));
+  const completeGuideSections = [...guideSections, ...additionalPdfSections];
+  const keyGuideTitles = ['Aim', 'Objectives', 'Requirements', 'Concept / theory', 'Algorithm', 'Program', 'Procedure', 'Sample output', 'Result', 'What you will learn', 'Step-by-step procedure', 'Expected output'];
+  const keyGuideSections = completeGuideSections.filter((section) => keyGuideTitles.includes(section.title));
+  const compactGuideSections = keyGuideSections.length ? keyGuideSections : completeGuideSections.slice(0, 5);
+  const visibleGuideSections = showAllGuideSections ? completeGuideSections : compactGuideSections;
+  const copyAllPracticalInfo = async () => {
+    const guideText = completeGuideSections
+      .map((section) => `${section.title}\n${section.copyText || getPracticalGuideText(practical, section)}`)
+      .join('\n\n');
+    const text = [`PRACTICAL NO. ${number(practical.practicalNumber)}`, practical.title, guideText].filter(Boolean).join('\n\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      notify('Practical information copied.');
+    } catch {
+      notify('Could not copy practical information. Please allow clipboard access and try again.');
+    }
+  };
+  return <><div className="breadcrumbs"><Link to="/student/practicals">← Back to practicals</Link><ChevronRight size={14} /><span>Practical {number(practical.practicalNumber)}</span></div><div className="practical-detail-layout"><article className="practical-article"><div className="practical-detail-head"><span className="practical-number-label">PRACTICAL NO. {number(practical.practicalNumber)}</span><Status>{completed ? 'Completed' : 'Available'}</Status><h1>{practical.title}</h1><div className="detail-actions"><Button variant="secondary" icon={saved ? Check : Bookmark} onClick={() => { toggleBookmark(practical.id); notify(saved ? 'Bookmark removed.' : 'Bookmark added.'); }}>{saved ? 'Bookmarked' : 'Bookmark'}</Button><Button onClick={() => completePractical(practical.id)} icon={CheckCircle2}>{completed ? 'Mark incomplete' : 'Mark complete'}</Button></div></div>
+    <div className="guide-heading"><div><span className="eyebrow">{completeGuideSections.length ? 'PRACTICAL GUIDE' : 'PRACTICAL DETAILS'}</span><p>{completeGuideSections.length ? 'Clear instructions and reference material for this practical.' : 'Important information from your practical handout.'}</p></div><div className="guide-heading-actions"><Button type="button" variant="secondary" icon={Copy} onClick={copyAllPracticalInfo} disabled={!completeGuideSections.length}>Copy all</Button><ClipboardList size={19} aria-hidden="true" /></div></div>
+    {completeGuideSections.length > 0
+      ? <><div className="guide-section-list">{visibleGuideSections.map((section, index) => <Section key={`${section.title}-${index}`} title={section.title} number={number(index + 1)}>{section.content}</Section>)}</div>
+        {completeGuideSections.length > compactGuideSections.length && <button type="button" className="guide-expand-button" onClick={() => setShowAllGuideSections((shown) => !shown)}>{showAllGuideSections ? 'Show key information only' : `Show all ${completeGuideSections.length} sections`}<ChevronDown size={15} className={showAllGuideSections ? 'guide-expand-icon-open' : ''} /></button>}
+      </>
+      : practical.pdfId
+        ? <section className="practical-extracted-panel">
+          {pdfTextError
+              ? <div className="guide-empty-state"><div className="guide-empty-icon"><FileText size={20} /></div><div><h2>Could not read practical details</h2><p>{pdfTextError}</p></div></div>
+              : pdfTextLoading
+                ? <div className="inline-pdf-status"><LoaderCircle size={17} className="inline-pdf-spinner" />Reading practical details...</div>
+                : <div className="guide-empty-state"><div className="guide-empty-icon"><FileText size={20} /></div><div><h2>Practical text is unavailable</h2><p>Download the original handout to view its contents.</p></div></div>}
+        </section>
+        : <div className="guide-empty-state"><div className="guide-empty-icon"><FileText size={20} /></div><div><h2>Practical details are not available yet</h2><p>Your teacher has not added written instructions or attached a practical handout.</p></div></div>}
+    {practical.pdfId && <div className="original-file-mobile practical-source-download"><OriginalPdfPanel pdfId={practical.pdfId} notify={notify} /></div>}</article></div>
     <section className="surface dashboard-panel">
       <div className="panel-heading"><div><p className="eyebrow">CLASSROOM SUBMISSION</p><h2>Submit your work</h2></div><Status>{latestSubmission?.status || 'Not Submitted'}</Status></div>
       {latestSubmission && <p className="page-description">Latest attempt {latestSubmission.attempt} · submitted {new Date(latestSubmission.submissionDate || latestSubmission.createdAt).toLocaleString()}</p>}
@@ -501,37 +711,7 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
     </section></>;
 }
 
-function OriginalPdfPanel({ notify }) {
-  const { pathname } = useLocation();
-  const practicalId = pathname.match(/^\/student\/practicals\/([^/]+)/)?.[1];
-  const [pdfId, setPdfId] = useState('');
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [pdfLoading, setPdfLoading] = useState(false);
-  useEffect(() => {
-    let active = true;
-    if (!practicalId) return () => { active = false; };
-    studentService.getPracticalById(practicalId).then((response) => {
-      if (active) setPdfId(response?.data?.practical?.pdfId || '');
-    }).catch(() => {
-      if (active) setPdfId('');
-    });
-    return () => { active = false; };
-  }, [practicalId]);
-  useEffect(() => () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
-  const openPdf = async () => {
-    if (!pdfId || pdfLoading || previewUrl) return;
-    setPdfLoading(true);
-    try {
-      const url = await pdfService.view(pdfId);
-      setPreviewUrl(url);
-    } catch (error) {
-      notify(error.message || 'Could not open the original PDF.');
-    } finally {
-      setPdfLoading(false);
-    }
-  };
+function OriginalPdfPanel({ pdfId, notify }) {
   const downloadPdf = async () => {
     try {
       if (!pdfId) throw new Error('No original PDF is attached.');
@@ -540,35 +720,9 @@ function OriginalPdfPanel({ notify }) {
       notify(error.message || 'Could not download the original PDF.');
     }
   };
-  return <><section className="pdf-panel" id="original-pdf"><div className="pdf-panel-head"><span className="pdf-icon"><FileText size={18} /></span><span><strong>Original practical PDF</strong><small>Teacher-uploaded source file</small></span><MoreHorizontal size={18} /></div><div className="pdf-preview"><FileText size={35} /><strong>{pdfId ? 'Original handout attached' : 'No PDF attached'}</strong><span>Stored in MongoDB GridFS</span></div><div className="pdf-actions"><Button variant="secondary" icon={pdfLoading ? LoaderCircle : ArrowRight} onClick={openPdf} disabled={!pdfId || pdfLoading || Boolean(previewUrl)}>{pdfLoading ? 'Opening...' : previewUrl ? 'PDF open' : 'Open PDF'}</Button><Button variant="quiet" icon={ArrowDownToLine} onClick={downloadPdf} disabled={!pdfId}>Download</Button></div></section>{previewUrl && <div className="pdf-viewer-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setPreviewUrl(''); }}><section className="pdf-viewer-dialog" role="dialog" aria-modal="true" aria-label="Original practical PDF"><header className="pdf-viewer-header"><span><FileText size={18} /><strong>Original practical PDF</strong></span><button className="icon-button" type="button" onClick={() => setPreviewUrl('')} aria-label="Close PDF preview"><X size={18} /></button></header><iframe className="pdf-viewer-frame" src={previewUrl} title="Original practical PDF" /></section></div>}</>;
-}
-
-function InlineOriginalPdf({ pdfId }) {
-  const [pdfUrl, setPdfUrl] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState('');
-  useEffect(() => {
-    let active = true;
-    let objectUrl = '';
-    pdfService.view(pdfId).then((url) => {
-      objectUrl = url;
-      if (active) setPdfUrl(url);
-      else URL.revokeObjectURL(url);
-    }).catch((error) => {
-      if (active) setLoadError(error.message || 'Could not load the original handout.');
-    }).finally(() => {
-      if (active) setLoading(false);
-    });
-    return () => {
-      active = false;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [pdfId]);
-  return <section className="inline-pdf-source" aria-label="Original practical handout">
-    <div className="inline-pdf-heading"><FileText size={17} /><div><strong>Original practical handout</strong><span>Teacher-uploaded source PDF</span></div></div>
-    {loading && <div className="inline-pdf-status"><LoaderCircle size={16} className="inline-pdf-spinner" />Loading the original handout...</div>}
-    {loadError && <p className="inline-pdf-error">{loadError}</p>}
-    {pdfUrl && <iframe className="inline-pdf-frame" src={pdfUrl} title="Original practical handout PDF" />}
+  return <section className="pdf-panel pdf-panel-compact" id="original-pdf">
+    <div className="pdf-panel-head"><span className="pdf-icon"><FileText size={18} /></span><span><strong>Source handout</strong><small>{pdfId ? 'Original PDF · available to download' : 'No PDF attached'}</small></span></div>
+    {pdfId && <Button variant="secondary" icon={ArrowDownToLine} onClick={downloadPdf}>Download source PDF</Button>}
   </section>;
 }
 
@@ -752,8 +906,10 @@ function NotesPage() {
           <h2>{note.title || 'Untitled note'}</h2>
           <p className="notes-card-folder" title={note.folderPath || 'Shared notes'}>{note.folderPath || 'Shared notes'}</p>
           <div className="notes-card-footer">
-            <span>{note.size ? `${(Number(note.size) / (1024 * 1024)).toFixed(1)} MB` : note.fileType || 'Learning resource'}</span>
-            {note.storageType === 'driveLink' && note.driveUrl
+            <span>{note.accessType === 'paid' && !note.hasAccess ? formatNotePrice(note.pricePaise) : note.size ? `${(Number(note.size) / (1024 * 1024)).toFixed(1)} MB` : note.fileType || 'Learning resource'}</span>
+            {note.accessType === 'paid' && !note.hasAccess
+              ? <Link className="button button-primary" to={`/student/notes/${note.id || note._id}`}>Buy note <ArrowRight size={15} /></Link>
+              : note.storageType === 'driveLink' && note.driveUrl
               ? <a className="button button-secondary" href={note.driveUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${note.title || 'Google Drive note'}`}>Open Drive <ExternalLink size={15} /></a>
               : <Button variant="secondary" onClick={() => setPreviewNote(note)} aria-label={`View ${note.title || 'note'}`}>
                 View note <ArrowRight size={15} />
@@ -1004,6 +1160,8 @@ function StudentNoteDetail({ noteId }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [purchaseBusy, setPurchaseBusy] = useState(false);
+  const [purchaseError, setPurchaseError] = useState('');
 
   useEffect(() => {
     setPreviewOpen(new URLSearchParams(location.search).get('preview') === '1');
@@ -1035,6 +1193,23 @@ function StudentNoteDetail({ noteId }) {
   if (error) return <EmptyState title="Note unavailable" text={error} action={<Link to="/student/notes" className="text-link">Back to notes</Link>} icon={Notebook} />;
   if (!note) return <EmptyState title="Note not found" text="This note may no longer be available." action={<Link to="/student/notes" className="text-link">Back to notes</Link>} icon={Notebook} />;
 
+  const purchaseNote = async () => {
+    setPurchaseBusy(true);
+    setPurchaseError('');
+    try {
+      await openPaidNoteCheckout(noteId);
+      const response = await api.get(`/student/notes/${noteId}`);
+      const updatedNote = response?.data?.note;
+      if (!updatedNote?.hasAccess) throw new Error('Payment was received, but note access is still being confirmed. Refresh this page in a moment.');
+      setNote(updatedNote);
+      setPreviewOpen(true);
+    } catch (purchaseFailure) {
+      setPurchaseError(purchaseFailure.message || 'Unable to complete payment.');
+    } finally {
+      setPurchaseBusy(false);
+    }
+  };
+  const needsPayment = note.accessType === 'paid' && !note.hasAccess;
   return <>
     <div className="breadcrumbs">
       <Link to="/student/dashboard">Dashboard</Link>
@@ -1043,19 +1218,23 @@ function StudentNoteDetail({ noteId }) {
       <ChevronRight size={14} />
       <span>{note.title || 'Note'}</span>
     </div>
-    <PageHeading eyebrow="STUDY RESOURCE" title={note.title || 'Untitled note'} description={note.description || note.category || 'Shared study note'} actions={note.storageType === 'driveLink' && note.driveUrl
-      ? <a className="button button-secondary" href={note.driveUrl} target="_blank" rel="noopener noreferrer">Open Drive <ExternalLink size={15} /></a>
-      : <Button variant="secondary" onClick={() => setPreviewOpen(true)}>View note</Button>} />
+    <PageHeading eyebrow="STUDY RESOURCE" title={note.title || 'Untitled note'} description={note.description || note.category || 'Shared study note'} actions={needsPayment
+      ? <Button icon={LockKeyhole} disabled={purchaseBusy} onClick={purchaseNote}>{purchaseBusy ? 'Processing payment...' : `Buy note · ${formatNotePrice(note.pricePaise)}`}</Button>
+      : note.storageType === 'driveLink' && note.driveUrl
+        ? <a className="button button-secondary" href={note.driveUrl} target="_blank" rel="noopener noreferrer">Open Drive <ExternalLink size={15} /></a>
+        : <Button variant="secondary" onClick={() => setPreviewOpen(true)}>View note</Button>} />
+    {needsPayment && <section className="surface dashboard-panel note-purchase-panel"><div className="study-planner-heading"><span className="planner-icon planner-icon-amber"><LockKeyhole size={18} /></span><div><p className="eyebrow">PAID STUDY RESOURCE</p><h2>{formatNotePrice(note.pricePaise)} · one-time access</h2></div></div><p>Pay securely with Razorpay. Once payment is verified, this note opens immediately and remains available in your account.</p>{purchaseError && <p className="planner-error" role="alert">{purchaseError}</p>}<Button icon={LockKeyhole} disabled={purchaseBusy} onClick={purchaseNote}>{purchaseBusy ? 'Processing payment...' : `Pay ${formatNotePrice(note.pricePaise)} and unlock`}</Button></section>}
     <section className="surface profile-card">
       <div className="profile-fields">
         <div className="profile-field"><span>Category</span><strong>{note.category || 'General'}</strong></div>
         <div className="profile-field"><span>Folder</span><strong>{note.folderPath || 'Shared notes'}</strong></div>
         <div className="profile-field"><span>File type</span><strong>{note.fileType || note.extension || 'Document'}</strong></div>
         <div className="profile-field"><span>Extension</span><strong>{note.extension ? `.${note.extension}` : 'N/A'}</strong></div>
+        <div className="profile-field"><span>Access</span><strong>{note.accessType === 'paid' ? note.hasAccess ? 'Purchased · lifetime access' : `Paid · ${formatNotePrice(note.pricePaise)}` : 'Free'}</strong></div>
         <div className="profile-field"><span>Status</span><strong>{note.isActive === false ? 'Inactive' : 'Available'}</strong></div>
       </div>
     </section>
-    {previewOpen && <NotePreview note={note} onClose={() => setPreviewOpen(false)} />}
+    {previewOpen && !needsPayment && <NotePreview note={note} onClose={() => setPreviewOpen(false)} />}
   </>;
 }
 
@@ -1091,6 +1270,7 @@ function AdminNotesPage({ notify }) {
   const [formBusy, setFormBusy] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [newVisible, setNewVisible] = useState(true);
+  const [pricingDrafts, setPricingDrafts] = useState({});
   const [newFolderName, setNewFolderName] = useState('');
   const [newFileName, setNewFileName] = useState('');
   const [newFileType, setNewFileType] = useState('markdown');
@@ -1103,6 +1283,15 @@ function AdminNotesPage({ notify }) {
   const [storageError, setStorageError] = useState('');
   const uploadInputRef = useRef(null);
 
+  const setAdminNotes = (items) => {
+    const noteItems = Array.isArray(items) ? items : [];
+    setNotes(noteItems);
+    setPricingDrafts(Object.fromEntries(noteItems.map((note) => [String(note._id || note.id), {
+      accessType: note.accessType === 'paid' ? 'paid' : 'free',
+      price: (Number(note.pricePaise || 0) / 100).toFixed(2)
+    }])));
+  };
+
   const loadData = async () => {
     setError('');
     const [notesResult, storageResult] = await Promise.allSettled([
@@ -1110,7 +1299,7 @@ function AdminNotesPage({ notify }) {
       api.get('/admin/storage')
     ]);
     if (notesResult.status === 'rejected') throw notesResult.reason;
-    setNotes(notesResult.value?.data?.notes || []);
+    setAdminNotes(notesResult.value?.data?.notes || []);
     setFolders(notesResult.value?.data?.folders || []);
     setStats(notesResult.value?.data?.stats || null);
     if (storageResult.status === 'fulfilled') {
@@ -1128,7 +1317,7 @@ function AdminNotesPage({ notify }) {
       .then(([notesResult, storageResult]) => {
         if (!active) return;
         if (notesResult.status === 'rejected') throw notesResult.reason;
-        setNotes(notesResult.value?.data?.notes || []);
+        setAdminNotes(notesResult.value?.data?.notes || []);
         setFolders(notesResult.value?.data?.folders || []);
         setStats(notesResult.value?.data?.stats || null);
         if (storageResult.status === 'fulfilled') {
@@ -1371,6 +1560,22 @@ function AdminNotesPage({ notify }) {
     }
   };
 
+  const saveNotePricing = async (note) => {
+    const id = String(note._id || note.id);
+    const draft = pricingDrafts[id] || { accessType: 'free', price: '0.00' };
+    const priceText = String(draft.price || '').trim();
+    const pricePaise = Math.round(Number(priceText) * 100);
+    if (draft.accessType === 'paid' && (!/^\d+(\.\d{1,2})?$/.test(priceText) || !Number.isSafeInteger(pricePaise) || pricePaise < 100)) {
+      notify('Paid notes need a valid price of at least ₹1.00, with up to two decimal places.');
+      return;
+    }
+    if (draft.accessType === 'paid' && note.storageType === 'driveLink') {
+      notify('Google Drive links cannot be sold securely. Upload or create the note in the portal first.');
+      return;
+    }
+    await updateNote(note, { accessType: draft.accessType, pricePaise: draft.accessType === 'paid' ? pricePaise : 0 });
+  };
+
   const deleteNote = async (note) => {
     if (!window.confirm(`Delete "${note.title}"? Uploaded files and created notes will be deleted; Google Drive originals remain unchanged.`)) return;
     const id = String(note._id || note.id);
@@ -1492,12 +1697,20 @@ function AdminNotesPage({ notify }) {
         const id = String(note._id || note.id);
         const visibleToStudents = note.isPublic === true || note.isPublic === undefined;
         const deleted = Boolean(note.isDeleted);
+        const pricing = pricingDrafts[id] || { accessType: note.accessType === 'paid' ? 'paid' : 'free', price: (Number(note.pricePaise || 0) / 100).toFixed(2) };
         return <article className={`surface admin-note-row ${deleted ? 'admin-note-deleted' : ''}`} key={id}>
           <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}>{note.storageType === 'driveLink' ? <Link2 size={19} /> : <FileText size={19} />}</span>
           <div className="admin-note-copy">
             {editingId === id ? <form className="admin-note-rename" onSubmit={(event) => { event.preventDefault(); updateNote(note, { title: editedTitle }); }}><input autoFocus value={editedTitle} maxLength={500} onChange={(event) => setEditedTitle(event.target.value)} aria-label={`Rename ${note.title}`} /><Button variant="secondary" icon={Save} disabled={busyId === id}>Save</Button><Button type="button" variant="quiet" onClick={() => setEditingId('')}>Cancel</Button></form> : <strong>{note.title || 'Untitled note'}</strong>}
             <small>Type: {note.storageType === 'gridfs' ? 'PDF' : note.storageType === 'mongodb' ? 'Created file' : note.storageType === 'driveLink' ? 'Google Drive link' : note.fileType || 'Drive file'} · Folder: {note.folderPath || note.category || 'Root'}</small>
             <small>{note.size ? `Size: ${formatBytes(note.size)} · ` : ''}Created: {note.driveCreatedAt || note.createdAt ? new Date(note.driveCreatedAt || note.createdAt).toLocaleDateString() : '—'} · {deleted ? 'Removed from portal' : note.isActive === false ? 'Not currently in Drive' : visibleToStudents ? 'Visible to students' : 'Hidden from students'}</small>
+            {note.storageType === 'driveLink'
+              ? <small>Google Drive links cannot be marked paid because their files cannot be protected by the portal.</small>
+              : <div className="admin-note-pricing">
+                <label><span>Access</span><select value={pricing.accessType} disabled={busyId === id} onChange={(event) => setPricingDrafts((current) => ({ ...current, [id]: { ...pricing, accessType: event.target.value } }))}><option value="free">Free</option><option value="paid">Paid</option></select></label>
+                {pricing.accessType === 'paid' && <label><span>Price (INR)</span><input type="number" min="1" step="0.01" value={pricing.price} disabled={busyId === id} onChange={(event) => setPricingDrafts((current) => ({ ...current, [id]: { ...pricing, price: event.target.value } }))} placeholder="e.g. 49.00" /></label>}
+                <Button type="button" variant="secondary" disabled={busyId === id} onClick={() => saveNotePricing(note)}>Save access & price</Button>
+              </div>}
           </div>
           {!deleted && note.isActive !== false && <div className="admin-note-actions">
             <button type="button" className="icon-button" title={note.storageType === 'driveLink' ? 'Open Google Drive link' : 'Open or view file'} aria-label={`Open ${note.title}`} onClick={() => openNote(note)}><ExternalLink size={16} /></button>

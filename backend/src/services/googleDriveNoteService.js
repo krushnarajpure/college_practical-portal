@@ -233,7 +233,7 @@ const performGoogleDriveNoteSync = async () => {
           filter: { driveFileId: note.driveFileId },
           update: {
             $set: set,
-            $setOnInsert: { customTitle: '', isPublic: false, isDeleted: false, folderMovedByAdmin: false }
+            $setOnInsert: { customTitle: '', isPublic: false, accessType: 'free', pricePaise: 0, isDeleted: false, folderMovedByAdmin: false }
           },
           upsert: true
         }
