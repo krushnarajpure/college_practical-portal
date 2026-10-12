@@ -83,6 +83,7 @@ export const getTeamMemberPhoto = async (req, res, next) => {
     if (!file) return res.status(404).json(errorResponse('No team member photo is available.', 'Not Found', 404));
 
     res.setHeader('Content-Type', file.contentType || 'image/jpeg');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
     res.setHeader('Cache-Control', 'public, max-age=300');
     const downloadStream = bucket.openDownloadStream(member.profilePhotoId);
     downloadStream.on('error', (error) => {
