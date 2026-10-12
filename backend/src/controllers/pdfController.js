@@ -5,6 +5,7 @@ import Practical from '../models/Practical.js';
 import Subject from '../models/Subject.js';
 import { getGridFSBucket } from '../config/storage.js';
 import pdfService from '../services/pdfService.js';
+import aiService from '../services/aiService.js';
 import notificationService from '../services/notificationService.js';
 import { successResponse } from '../utils/apiResponse.js';
 
@@ -172,6 +173,39 @@ export const getStudentPdfText = async (req, res, next) => {
     if (parsedPdf) {
       try { await parsedPdf.destroy(); } catch { /* PDF cleanup is best-effort. */ }
     }
+  }
+};
+
+export const getStudentPdfGuide = async (req, res, next) => {
+  try {
+    const { pdf, practical } = await getAuthorizedPdf(req);
+    if (pdf.aiGuide) {
+      return res.status(200).json(successResponse('Practical PDF guide retrieved.', {
+        guide: pdf.aiGuide,
+        generatedAt: pdf.aiGuideGeneratedAt,
+        cached: true
+      }));
+    }
+
+    const chunks = [];
+    const stream = getGridFSBucket().openDownloadStream(pdf.gridFsFileId);
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+    const guide = await aiService.generateStructuredPractical({
+      pdfBuffer: Buffer.concat(chunks),
+      title: practical.title
+    });
+    pdf.set('aiGuide', guide);
+    pdf.markModified('aiGuide');
+    pdf.aiGuideGeneratedAt = new Date();
+    await pdf.save();
+
+    return res.status(200).json(successResponse('Practical PDF analyzed and guide generated.', {
+      guide,
+      generatedAt: pdf.aiGuideGeneratedAt,
+      cached: false
+    }));
+  } catch (error) {
+    return next(error);
   }
 };
 

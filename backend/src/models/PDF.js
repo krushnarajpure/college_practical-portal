@@ -9,6 +9,8 @@ const pdfSchema = new mongoose.Schema(
     originalFileName: { type: String, required: true, trim: true },
     mimeType: { type: String, required: true, enum: ['application/pdf'], default: 'application/pdf' },
     fileSize: { type: Number, required: true, min: 0 },
+    aiGuide: { type: mongoose.Schema.Types.Mixed, default: null },
+    aiGuideGeneratedAt: { type: Date, default: null },
     uploadedAt: { type: Date, default: Date.now }
   },
   { timestamps: true }

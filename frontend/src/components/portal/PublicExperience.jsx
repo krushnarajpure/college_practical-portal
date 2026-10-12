@@ -7,7 +7,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import ThemeToggle from '../common/ThemeToggle';
 import api from '../../services/api';
-import { getAcademicYearOptions } from '../../utils/academicYear';
+import { dedupeAcademicOptions, getAcademicYearOptions } from '../../utils/academicYear';
 import krushnaPhoto from '../../../krushna.jpeg';
 import teamService from '../../services/teamService';
 
@@ -33,6 +33,7 @@ function LandingPage() {
     <section className="feature-strip" id="features"><div><BookOpen size={19} /><span>Subject-wise practicals</span></div><div><FileText size={19} /><span>Original PDF access</span></div><div><ClipboardList size={19} /><span>Step-by-step guidance</span></div><div><Sparkles size={19} /><span>AI-powered assistance</span></div></section>
     <section className="how-section content-section" id="how-it-works"><div className="section-intro"><p className="eyebrow">A CLEAR PATH THROUGH EVERY PRACTICAL</p><h2>From your timetable<br />to your lab book.</h2><p>Everything is organized around your academic assignment, so the right learning material is easy to find.</p></div><div className="steps-grid">{[['01', 'Register', 'Create your account with your college details.'], ['02', 'Set your academic details', 'Choose your department, year and semester.'], ['03', 'See your subjects', 'Your curriculum is matched automatically.'], ['04', 'Open a practical', 'Find the aim, concepts and original handout.'], ['05', 'Learn step by step', 'Work through the procedure at your own pace.']].map(([number, title, copy]) => <article className="step-item" key={number}><span>{number}</span><h3>{title}</h3><p>{copy}</p></article>)}</div></section>
     <section className="audience-section content-section" id="about"><div className="audience-heading"><div><p className="eyebrow">ONE PORTAL. THREE PERSPECTIVES.</p><h2>Built for the whole college.</h2></div><p>One shared academic structure keeps students, teachers and administrators in sync.</p></div><div className="audience-grid"><article><span className="audience-icon"><GraduationCap size={20} /></span><h3>Students</h3><p>Find the right subject, understand each practical and keep your progress moving.</p><Link to="/select-role?role=student">Explore student access <ArrowRight size={15} /></Link></article><article><span className="audience-icon"><Users size={20} /></span><h3>Teachers</h3><p>Prepare practical resources, review generated guidance and publish with confidence.</p><Link to="/select-role?role=teacher">Explore teacher access <ArrowRight size={15} /></Link></article><article><span className="audience-icon"><ShieldCheck size={20} /></span><h3>Administrators</h3><p>Keep departments, academic years, semesters and assignments organized.</p><Link to="/owner-profile">Website administrator <ArrowRight size={15} /></Link></article></div></section>
+    <LandingTeamSection />
     <section className="why-section content-section"><div><p className="eyebrow">MADE FOR REAL COURSEWORK</p><h2>Less searching.<br />More understanding.</h2><p className="why-copy">Your practical resources belong together. Find the source document, a clear explanation and your course context in one dependable workspace.</p><Link to="/select-role" className="text-link">Find your workspace <ArrowRight size={15} /></Link></div><div className="why-points">{['Centralized practical resources', 'Organized by semester and subject', 'Teacher-managed course content', 'Student-friendly explanations', 'Original PDFs stay untouched', 'Myraa learning assistant, kept separate'].map((item, index) => <div key={item}><span>{String(index + 1).padStart(2, '0')}</span><strong>{item}</strong><Check size={16} /></div>)}</div></section>
   </main><footer className="public-footer"><div className="footer-main"><Link to="/" className="brand-lockup"><span className="brand-mark"><BookOpen size={19} /></span><span><strong>College Practical Portal</strong><small>ALL YOUR PRACTICALS. ONE PLACE.</small></span></Link><p>Practical learning, thoughtfully organized.</p><div className="footer-links"><a href="#features">Features</a><Link to="/login">Login</Link><Link to="/register">Register</Link><a href="mailto:portal@college.edu">Contact</a><button onClick={() => window.alert('Privacy information will be available when the portal is connected to college policy.')}>Privacy</button><button onClick={() => window.alert('Terms will be available when the portal is connected to college policy.')}>Terms</button></div></div><Link to="/owner-profile" className="footer-owner-link"><img src={krushnaPhoto} alt="Krushna Rajpure" /><span><small>WEBSITE ADMINISTRATOR</small><strong>Krushna Rajpure</strong></span><ArrowRight size={17} aria-hidden="true" /></Link><div className="footer-meta"><span>© 2026 College Practical Portal</span><span>For the college community</span></div></footer></div>;
 }
@@ -42,6 +43,38 @@ function OwnerTeamAvatar({ member, initials }) {
   return member.hasPhoto && !photoUnavailable
     ? <img className="owner-team-avatar owner-team-photo" src={teamService.getPhotoUrl(member._id, member.updatedAt)} alt={`${member.name} profile`} onError={() => setPhotoUnavailable(true)} />
     : <span className="owner-team-avatar" aria-hidden="true">{initials}</span>;
+}
+
+function LandingTeamSection() {
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [teamError, setTeamError] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    teamService.getPublicMembers()
+      .then((response) => {
+        if (active) setTeamMembers(response?.data?.members || []);
+      })
+      .catch((error) => {
+        if (active) setTeamError(error.message || 'Team profiles are temporarily unavailable.');
+      });
+    return () => { active = false; };
+  }, []);
+
+  if (teamError || !teamMembers.length) return null;
+  return <section className="owner-team-section content-section" aria-labelledby="landing-team-title">
+    <div className="owner-team-heading">
+      <div><p className="eyebrow">THE PEOPLE BEHIND THE PORTAL</p><h2 id="landing-team-title">Meet the team</h2></div>
+      <p>A dedicated team making practical learning clearer and easier for every student.</p>
+    </div>
+    <div className="owner-team-grid">{teamMembers.map((member) => {
+      const initials = member.name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || 'TM';
+      return <article className="owner-team-card" key={member._id}>
+        <OwnerTeamAvatar member={member} initials={initials} />
+        <div className="owner-team-card-content"><p className="owner-team-role">{member.title}</p><h3>{member.name}</h3>{member.bio && <p className="owner-team-bio">{member.bio}</p>}</div>
+      </article>;
+    })}</div>
+  </section>;
 }
 
 function OwnerProfilePage() {
@@ -148,16 +181,25 @@ function AuthPage({ mode = 'login' }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
+  const [programs, setPrograms] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [years, setYears] = useState([]);
   const [semesters, setSemesters] = useState([]);
   const [optionsLoading, setOptionsLoading] = useState(false);
   const [optionsError, setOptionsError] = useState('');
   const [optionsReload, setOptionsReload] = useState(0);
-  const [fields, setFields] = useState({ fullName: '', studentId: '', employeeId: '', email: '', password: '', confirmPassword: '', departmentId: '', yearId: '', semesterId: '' });
+  const [fields, setFields] = useState({ fullName: '', studentId: '', employeeId: '', email: '', password: '', confirmPassword: '', programId: '', departmentId: '', yearId: '', semesterId: '' });
   const update = (key) => (event) => setFields((current) => ({ ...current, [key]: event.target.value }));
   const updateYear = (event) => setFields((current) => ({ ...current, yearId: event.target.value, semesterId: '' }));
-  const availableSemesters = semesters.filter((semester) => String(semester.yearId?._id || semester.yearId) === String(fields.yearId));
+  const updateProgram = (event) => setFields((current) => ({ ...current, programId: event.target.value, departmentId: '', yearId: '', semesterId: '' }));
+  const availableDepartments = dedupeAcademicOptions(
+    departments.filter((department) => String(department.programId?._id || department.programId) === String(fields.programId)),
+    (department) => department?._id || department?.code || `${department?.branchName || department?.name || ''}|${department?.programId || ''}`
+  );
+  const availableSemesters = dedupeAcademicOptions(
+    semesters.filter((semester) => String(semester.yearId?._id || semester.yearId) === String(fields.yearId)),
+    (semester) => semester?._id || semester?.code || `${semester?.name || ''}|${semester?.yearId || ''}|${semester?.number || ''}`
+  );
   const registerMode = mode === 'register';
   const forgotMode = mode === 'forgot';
 
@@ -167,28 +209,35 @@ function AuthPage({ mode = 'login' }) {
       setOptionsLoading(true);
       setOptionsError('');
       try {
-        const [departmentResult, yearResult, semesterResult] = await Promise.allSettled([
+        const [programResult, departmentResult, yearResult, semesterResult] = await Promise.allSettled([
+          api.get('/public/programs'),
           api.get('/public/departments'),
-          api.get('/public/years'),
-          api.get('/public/semesters')
+          api.get('/public/years', fields.programId ? { programId: fields.programId } : {}),
+          api.get('/public/semesters', fields.programId ? { programId: fields.programId } : {})
         ]);
 
         if (!active) return;
         const failures = [];
+        if (programResult.status === 'fulfilled') {
+          setPrograms(dedupeAcademicOptions(programResult.value?.data?.programs || [], (program) => program?._id || program?.code || program?.name));
+        } else {
+          setPrograms([]);
+          failures.push(`Courses: ${programResult.reason.message || 'unavailable'}`);
+        }
         if (departmentResult.status === 'fulfilled') {
-          setDepartments(departmentResult.value?.data?.departments || []);
+          setDepartments(dedupeAcademicOptions(departmentResult.value?.data?.departments || [], (department) => department?._id || department?.code || `${department?.branchName || department?.name || ''}|${department?.programId || ''}`));
         } else {
           setDepartments([]);
           failures.push(`Departments: ${departmentResult.reason.message || 'unavailable'}`);
         }
         if (yearResult.status === 'fulfilled') {
-          setYears(getAcademicYearOptions(yearResult.value?.data?.years || []));
+          setYears(dedupeAcademicOptions(getAcademicYearOptions(yearResult.value?.data?.years || []), (year) => year?._id || year?.code || `${year?.name || ''}|${year?.academicLevel || ''}|${year?.programId || ''}`));
         } else {
           setYears([]);
           failures.push(`Years: ${yearResult.reason.message || 'unavailable'}`);
         }
         if (semesterResult.status === 'fulfilled') {
-          setSemesters(semesterResult.value?.data?.semesters || []);
+          setSemesters(dedupeAcademicOptions(semesterResult.value?.data?.semesters || [], (semester) => semester?._id || semester?.code || `${semester?.name || ''}|${semester?.yearId || ''}|${semester?.number || ''}`));
         } else {
           setSemesters([]);
           failures.push(`Semesters: ${semesterResult.reason.message || 'unavailable'}`);
@@ -206,13 +255,14 @@ function AuthPage({ mode = 'login' }) {
       fetchOptions();
     }
     return () => { active = false; };
-  }, [registerMode, optionsReload]);
+  }, [registerMode, optionsReload, fields.programId]);
 
   const submit = async (event) => {
     event.preventDefault(); setError(''); setMessage('');
     if (forgotMode) { setMessage('If an account exists for that email, password reset instructions will be sent.'); return; }
     if (registerMode && fields.password !== fields.confirmPassword) { setError('Your passwords do not match.'); return; }
-    if (registerMode && role === 'student' && (!fields.departmentId || !fields.yearId || !fields.semesterId)) { setError('Department, year and semester are required.'); return; }
+    if (registerMode && (!fields.programId || !fields.departmentId)) { setError('Course and branch are required.'); return; }
+    if (registerMode && role === 'student' && (!fields.yearId || !fields.semesterId)) { setError('Academic year and semester are required.'); return; }
     setBusy(true);
     try {
       const signedIn = registerMode
@@ -223,6 +273,7 @@ function AuthPage({ mode = 'login' }) {
           role,
           studentId: fields.studentId,
           employeeId: fields.employeeId,
+          programId: fields.programId,
           departmentId: fields.departmentId,
           yearId: fields.yearId,
           semesterId: fields.semesterId
@@ -243,8 +294,19 @@ function AuthPage({ mode = 'login' }) {
       <label className="form-field"><span>{forgotMode ? 'College email' : 'Email / User ID'}</span><span className="input-with-icon"><Mail size={16} /><input type="email" required autoComplete="email" value={fields.email} onChange={update('email')} placeholder="name@college.edu" /></span></label>
       {!forgotMode && <label className="form-field"><span>Password</span><span className="input-with-icon"><LockKeyhole size={16} /><input type="password" required autoComplete={registerMode ? 'new-password' : 'current-password'} minLength={6} value={fields.password} onChange={update('password')} placeholder="At least 6 characters" /></span></label>}
       {registerMode && <label className="form-field"><span>Confirm password</span><input type="password" required autoComplete="new-password" value={fields.confirmPassword} onChange={update('confirmPassword')} placeholder="Re-enter your password" /></label>}
-      {registerMode && role === 'student' && <div className="academic-fields"><p className="eyebrow">ACADEMIC DETAILS</p><div className="form-grid"><label className="form-field"><span>Department <b>*</b></span><select required disabled={optionsLoading || departments.length === 0} value={fields.departmentId} onChange={update('departmentId')}><option value="">{optionsLoading ? 'Loading departments...' : departments.length ? 'Select Department' : 'No departments available'}</option>{departments.map((department) => <option key={department._id || department.id} value={department._id || department.id}>{department.name}</option>)}</select></label><label className="form-field"><span>Year <b>*</b></span><select required disabled={optionsLoading || years.length === 0} value={fields.yearId} onChange={updateYear}><option value="">{optionsLoading ? 'Loading years...' : years.length ? 'Select Year' : 'No years available'}</option>{years.map((year) => <option key={year._id || year.id} value={year._id || year.id}>{year.name}</option>)}</select></label><label className="form-field form-field-wide"><span>Semester <b>*</b></span><select required disabled={optionsLoading || !fields.yearId || availableSemesters.length === 0} value={fields.semesterId} onChange={update('semesterId')}><option value="">{optionsLoading ? 'Loading semesters...' : !fields.yearId ? 'Select a year first' : availableSemesters.length ? 'Select Semester' : 'No semesters available for this year'}</option>{availableSemesters.map((semester) => <option key={semester._id || semester.id} value={semester._id || semester.id}>{semester.name}</option>)}</select></label></div>{optionsError ? <div className="academic-options-message academic-options-error" role="alert"><span>{optionsError}</span><button type="button" onClick={() => setOptionsReload((current) => current + 1)}>Retry</button></div> : !optionsLoading && !departments.length ? <p className="academic-options-message">No active departments are configured yet. Ask your college administrator to add one under Admin → Departments.</p> : !optionsLoading && !years.length ? <p className="academic-options-message academic-options-error">No academic years were returned by the server. Please retry or contact your administrator.</p> : null}</div>}
-      {registerMode && role === 'teacher' && <div className="academic-fields"><p className="eyebrow">TEACHING ASSIGNMENT</p><label className="form-field"><span>Department</span><select disabled={optionsLoading || departments.length === 0} value={fields.departmentId} onChange={update('departmentId')}><option value="">{optionsLoading ? 'Loading departments...' : departments.length ? 'Select Department' : 'No departments available'}</option>{departments.map((department) => <option key={department._id || department.id} value={department._id || department.id}>{department.name}</option>)}</select></label>{optionsError ? <div className="academic-options-message academic-options-error" role="alert"><span>{optionsError}</span><button type="button" onClick={() => setOptionsReload((current) => current + 1)}>Retry</button></div> : !optionsLoading && !departments.length ? <p className="academic-options-message">No active departments are configured yet. Ask your college administrator to add one under Admin → Departments.</p> : <p className="form-help">Subjects can be assigned after they are configured by an administrator.</p>}</div>}
+      {registerMode && role === 'student' && <div className="academic-fields">
+        <p className="eyebrow">ACADEMIC DETAILS</p>
+        <div className="form-grid">
+          <label className="form-field"><span>Course <b>*</b></span><select required disabled={optionsLoading || !programs.length} value={fields.programId} onChange={updateProgram}><option value="">{optionsLoading ? 'Loading courses...' : 'Select Course'}</option>{programs.map((program) => <option key={program._id} value={program._id}>{program.name}</option>)}</select></label>
+          <label className="form-field"><span>Branch <b>*</b></span><select required disabled={optionsLoading || !fields.programId || !availableDepartments.length} value={fields.departmentId} onChange={update('departmentId')}><option value="">{!fields.programId ? 'Select a course first' : availableDepartments.length ? 'Select Branch' : 'No branches configured'}</option>{availableDepartments.map((department) => <option key={department._id} value={department._id}>{department.branchName || department.name}</option>)}</select></label>
+        </div>
+        <div className="academic-select-row">
+          <label className="form-field"><span>Academic year <b>*</b></span><select required disabled={optionsLoading || !fields.programId || years.length === 0} value={fields.yearId} onChange={updateYear}><option value="">{!fields.programId ? 'Select a course first' : optionsLoading ? 'Loading years...' : years.length ? 'Select year' : 'No years configured'}</option>{years.map((year) => <option key={year._id || year.id} value={year._id || year.id}>{year.name}</option>)}</select></label>
+          <label className="form-field"><span>Semester <b>*</b></span><select required disabled={optionsLoading || !fields.yearId || availableSemesters.length === 0} value={fields.semesterId} onChange={update('semesterId')}><option value="">{optionsLoading ? 'Loading semesters...' : !fields.yearId ? 'Select a year first' : availableSemesters.length ? 'Select semester' : 'No semesters configured'}</option>{availableSemesters.map((semester) => <option key={semester._id || semester.id} value={semester._id || semester.id}>{semester.name}</option>)}</select></label>
+        </div>
+        {optionsError ? <div className="academic-options-message academic-options-error" role="alert"><span>{optionsError}</span><button type="button" onClick={() => setOptionsReload((current) => current + 1)}>Retry</button></div> : !optionsLoading && programs.length > 0 && fields.programId && years.length === 0 ? <p className="academic-options-message academic-options-error">No academic years are configured for this course yet. Contact your administrator.</p> : null}
+      </div>}
+      {registerMode && role === 'teacher' && <div className="academic-fields"><p className="eyebrow">TEACHING ASSIGNMENT</p><div className="form-grid"><label className="form-field"><span>Course <b>*</b></span><select required disabled={optionsLoading || !programs.length} value={fields.programId} onChange={updateProgram}><option value="">{optionsLoading ? 'Loading courses...' : 'Select Course'}</option>{programs.map((program) => <option key={program._id} value={program._id}>{program.name}</option>)}</select></label><label className="form-field"><span>Branch <b>*</b></span><select required disabled={optionsLoading || !fields.programId || !availableDepartments.length} value={fields.departmentId} onChange={update('departmentId')}><option value="">{!fields.programId ? 'Select a course first' : availableDepartments.length ? 'Select Branch' : 'No branches configured'}</option>{availableDepartments.map((department) => <option key={department._id} value={department._id}>{department.branchName || department.name}</option>)}</select></label></div>{optionsError ? <div className="academic-options-message academic-options-error" role="alert"><span>{optionsError}</span><button type="button" onClick={() => setOptionsReload((current) => current + 1)}>Retry</button></div> : !optionsLoading && !programs.length ? <p className="academic-options-message">No active courses are available yet. Ask your college administrator to configure them.</p> : <p className="form-help">Subjects can be assigned after they are configured by an administrator.</p>}</div>}
       {mode === 'login' && <div className="remember-row"><label><input type="checkbox" defaultChecked />Remember me</label><Link to="/forgot-password">Forgot password?</Link></div>}
       {error && <p className="form-alert form-alert-error" role="alert">{error}</p>}{message && <p className="form-alert form-alert-success" role="status">{message}</p>}
       <button className="button button-primary auth-submit" type="submit" disabled={busy}>{busy ? 'Please wait...' : forgotMode ? 'Send reset instructions' : registerMode ? 'Create account' : 'Sign in'} <ArrowRight size={16} /></button>

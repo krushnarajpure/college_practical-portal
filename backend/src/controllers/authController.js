@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import User from '../models/User.js';
 import Department from '../models/Department.js';
+import Program from '../models/Program.js';
 import Year from '../models/Year.js';
 import Semester from '../models/Semester.js';
 import { hashPassword, comparePassword } from '../utils/password.js';
@@ -19,6 +20,7 @@ export const registerUser = async (req, res, next) => {
       email,
       password,
       role = 'student',
+      programId,
       departmentId,
       yearId,
       semesterId,
@@ -39,33 +41,45 @@ export const registerUser = async (req, res, next) => {
       return res.status(409).json(errorResponse('User already exists.', 'Conflict', 409));
     }
 
-    if (role === 'student' && (!departmentId || !yearId || !semesterId || !validAcademicIds(departmentId, yearId, semesterId))) {
-      return res.status(400).json(errorResponse('Department, year and semester are required for student registration.', 'Bad Request', 400));
+    if (role === 'student' && (!programId || !departmentId || !yearId || !semesterId || !validAcademicIds(programId, departmentId, yearId, semesterId))) {
+      return res.status(400).json(errorResponse('Course, branch, year and semester are required for student registration.', 'Bad Request', 400));
+    }
+    if (programId && !mongoose.Types.ObjectId.isValid(programId)) {
+      return res.status(400).json(errorResponse('Select a valid course.', 'Bad Request', 400));
     }
 
     if (role === 'student') {
-      const [department, year, semester] = await Promise.all([
+      const [department, year, semester, program] = await Promise.all([
         Department.findOne({ _id: departmentId, status: 'active' }),
-        Year.findOne({ _id: yearId, status: 'active' }),
-        Semester.findOne({ _id: semesterId, status: 'active' })
+        Year.findOne({ _id: yearId, status: 'active', programId }),
+        Semester.findOne({ _id: semesterId, status: 'active' }),
+        programId ? Program.findOne({ _id: programId, status: 'active' }) : null
       ]);
 
       if (!department || !year || !semester) {
         return res.status(400).json(errorResponse('Select an active department, year and semester.', 'Bad Request', 400));
+      }
+      if (!program || String(department.programId) !== String(program._id)) {
+        return res.status(400).json(errorResponse('Select a branch belonging to the selected course.', 'Bad Request', 400));
       }
       if (String(semester.yearId) !== String(year._id)) {
         return res.status(400).json(errorResponse('Selected semester does not belong to the selected year.', 'Bad Request', 400));
       }
     }
 
-    if (role === 'teacher' && departmentId && !mongoose.Types.ObjectId.isValid(departmentId)) {
-      return res.status(400).json(errorResponse('A valid department is required for teachers.', 'Bad Request', 400));
+    if (role === 'teacher' && (!programId || !departmentId || !validAcademicIds(programId, departmentId))) {
+      return res.status(400).json(errorResponse('Select a course and branch for teachers.', 'Bad Request', 400));
     }
 
-    if (role === 'teacher' && departmentId && !(await Department.exists({ _id: departmentId, status: 'active' }))) {
-      return res.status(400).json(errorResponse('Select an active department for teachers.', 'Bad Request', 400));
+    if (role === 'teacher') {
+      const department = await Department.findOne({ _id: departmentId, status: 'active' });
+      if (!department) return res.status(400).json(errorResponse('Select an active department for teachers.', 'Bad Request', 400));
+      if (String(department.programId) !== String(programId) || !(await Program.exists({ _id: programId, status: 'active' }))) {
+        return res.status(400).json(errorResponse('Select a branch belonging to the selected course.', 'Bad Request', 400));
+      }
     }
 
+    const selectedDepartment = departmentId ? await Department.findById(departmentId).select('programId') : null;
     const hashedPassword = await hashPassword(password);
     const user = await User.create({
       name: name.trim(),
@@ -74,6 +88,7 @@ export const registerUser = async (req, res, next) => {
       role,
       studentId: role === 'student' ? studentId.trim() : '',
       employeeId: role === 'teacher' ? employeeId.trim() : '',
+      programId: programId || selectedDepartment?.programId || null,
       departmentId: role === 'student' || role === 'teacher' ? departmentId || null : null,
       yearId: role === 'student' ? yearId || null : null,
       semesterId: role === 'student' ? semesterId || null : null,
@@ -81,6 +96,7 @@ export const registerUser = async (req, res, next) => {
     });
 
     const token = generateToken(user);
+    await user.populate(['programId', 'departmentId', 'yearId', 'semesterId']);
     const sanitizedUser = user.toObject();
     delete sanitizedUser.password;
 
@@ -113,6 +129,7 @@ export const loginUser = async (req, res, next) => {
     }
 
     const token = generateToken(user);
+    await user.populate(['programId', 'departmentId', 'yearId', 'semesterId']);
     const sanitizedUser = user.toObject();
     delete sanitizedUser.password;
 
@@ -127,7 +144,7 @@ export const logoutUser = async (req, res) => {
 };
 
 export const getCurrentUser = async (req, res) => {
-  const user = await User.findById(req.user.id).select('-password').populate(['departmentId', 'yearId', 'semesterId', 'assignedSubjects']);
+  const user = await User.findById(req.user.id).select('-password').populate(['programId', 'departmentId', 'yearId', 'semesterId', 'assignedSubjects']);
   return res.status(200).json(successResponse('Current user fetched.', { user }));
 };
 

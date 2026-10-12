@@ -1,6 +1,7 @@
 import express from 'express';
 import { authenticateUser } from '../middleware/authMiddleware.js';
 import { requireRole } from '../middleware/roleMiddleware.js';
+import { requireVisiblePage } from '../middleware/pageVisibilityMiddleware.js';
 import { academicDocumentUpload } from '../middleware/academicDocumentUpload.js';
 import {
   createAcademicDocument,
@@ -25,6 +26,7 @@ import {
 
 const router = express.Router();
 router.use(authenticateUser);
+router.use(requireVisiblePage('academic-documents'));
 
 router.get('/', requireRole('student', 'teacher', 'admin'), listAcademicDocuments);
 router.get('/student', requireRole('student'), listStudentDocuments);

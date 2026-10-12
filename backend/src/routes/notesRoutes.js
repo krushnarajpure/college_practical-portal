@@ -25,18 +25,19 @@ import {
 import { getAdminStorage } from '../controllers/adminController.js';
 import { notePdfUpload } from '../middleware/noteUploadMiddleware.js';
 import { createNotePaymentOrder, verifyNotePayment } from '../controllers/notePaymentController.js';
+import { requireVisiblePage } from '../middleware/pageVisibilityMiddleware.js';
 
 const router = express.Router();
 
 router.use(authenticateUser);
-router.get('/notes', requireRole('student'), listStudentNotes);
-router.get('/student/notes', requireRole('student'), listStudentNotes);
-router.get('/student/notes/assistant/search', requireRole('student'), searchStudentNotesForAssistant);
-router.post('/notes/payments/orders', requireRole('student'), createNotePaymentOrder);
-router.post('/notes/payments/verify', requireRole('student'), verifyNotePayment);
-router.get('/student/notes/:noteId/text', requireRole('student'), readStudentNoteTextForAssistant);
-router.get('/student/notes/:noteId', requireRole('student'), getStudentNote);
-router.get('/student/notes/:noteId/view', requireRole('student'), streamStudentNote);
+router.get('/notes', requireRole('student'), requireVisiblePage('notes'), listStudentNotes);
+router.get('/student/notes', requireRole('student'), requireVisiblePage('notes'), listStudentNotes);
+router.get('/student/notes/assistant/search', requireRole('student'), requireVisiblePage('notes'), searchStudentNotesForAssistant);
+router.post('/notes/payments/orders', requireRole('student'), requireVisiblePage('notes'), createNotePaymentOrder);
+router.post('/notes/payments/verify', requireRole('student'), requireVisiblePage('notes'), verifyNotePayment);
+router.get('/student/notes/:noteId/text', requireRole('student'), requireVisiblePage('notes'), readStudentNoteTextForAssistant);
+router.get('/student/notes/:noteId', requireRole('student'), requireVisiblePage('notes'), getStudentNote);
+router.get('/student/notes/:noteId/view', requireRole('student'), requireVisiblePage('notes'), streamStudentNote);
 router.get('/dashboard/notes', requireRole('student', 'teacher'), listDashboardNotes);
 router.get('/dashboard/notes/:noteId/view', requireRole('student', 'teacher'), streamDashboardNote);
 router.get('/admin/notes', requireRole('admin'), listAdminNotes);

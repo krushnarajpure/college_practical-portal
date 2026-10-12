@@ -12,6 +12,7 @@ const userSchema = new mongoose.Schema(
     },
     studentId: { type: String, default: '' },
     employeeId: { type: String, default: '' },
+    programId: { type: mongoose.Schema.Types.ObjectId, ref: 'Program', default: null },
     departmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
     yearId: { type: mongoose.Schema.Types.ObjectId, ref: 'Year', default: null },
     semesterId: { type: mongoose.Schema.Types.ObjectId, ref: 'Semester', default: null },

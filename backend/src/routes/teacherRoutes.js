@@ -19,24 +19,25 @@ import {
 } from '../controllers/practicalController.js';
 import { authenticateUser } from '../middleware/authMiddleware.js';
 import { requireRole } from '../middleware/roleMiddleware.js';
+import { requireVisiblePage } from '../middleware/pageVisibilityMiddleware.js';
 
 const router = express.Router();
 
 router.use(authenticateUser, requireRole('teacher'));
 
-router.get('/dashboard', getTeacherDashboard);
-router.get('/subjects', getAssignedSubjects);
-router.get('/subjects/available', getAvailableSubjects);
-router.post('/subjects/create', createTeacherSubject);
-router.post('/subjects', assignSubject);
-router.get('/practicals', getTeacherPracticals);
-router.post('/practicals', createPractical);
-router.get('/practicals/:id', getPracticalById);
-router.put('/practicals/:id', updatePractical);
-router.delete('/practicals/:id', deletePractical);
-router.post('/practicals/:id/publish', publishPractical);
-router.post('/practicals/:id/unpublish', unpublishPractical);
-router.post('/practicals/:id/analyze', analyzePractical);
-router.get('/students', getTeacherStudents);
+router.get('/dashboard', requireVisiblePage('dashboard'), getTeacherDashboard);
+router.get('/subjects', requireVisiblePage('subjects'), getAssignedSubjects);
+router.get('/subjects/available', requireVisiblePage('subjects'), getAvailableSubjects);
+router.post('/subjects/create', requireVisiblePage('subjects'), createTeacherSubject);
+router.post('/subjects', requireVisiblePage('subjects'), assignSubject);
+router.get('/practicals', requireVisiblePage('practicals'), getTeacherPracticals);
+router.post('/practicals', requireVisiblePage('practicals'), createPractical);
+router.get('/practicals/:id', requireVisiblePage('practicals'), getPracticalById);
+router.put('/practicals/:id', requireVisiblePage('practicals'), updatePractical);
+router.delete('/practicals/:id', requireVisiblePage('practicals'), deletePractical);
+router.post('/practicals/:id/publish', requireVisiblePage('practicals'), publishPractical);
+router.post('/practicals/:id/unpublish', requireVisiblePage('practicals'), unpublishPractical);
+router.post('/practicals/:id/analyze', requireVisiblePage('practicals'), analyzePractical);
+router.get('/students', requireVisiblePage('students'), getTeacherStudents);
 
 export default router;

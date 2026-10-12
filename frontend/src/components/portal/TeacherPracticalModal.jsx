@@ -10,8 +10,8 @@ const idOf = (value) => String(value?._id || value || '');
 const listFields = ['objectives', 'requirements', 'procedure', 'importantPoints', 'commonErrors', 'vivaQuestions'];
 const guideFields = [
   ['aim', 'Aim'], ['about', 'About this practical'], ['objectives', 'Objectives'], ['theory', 'Theory'],
-  ['requirements', 'Requirements'], ['procedure', 'Procedure'], ['task', 'Task'],
-  ['expectedOutput', 'Expected output'], ['importantPoints', 'Important points'],
+  ['requirements', 'Requirements'], ['algorithm', 'Algorithm'], ['program', 'Program / source code'],
+  ['procedure', 'Procedure'], ['task', 'Task'], ['expectedOutput', 'Expected output'], ['result', 'Result'], ['importantPoints', 'Important points'],
   ['commonErrors', 'Common errors'], ['vivaQuestions', 'Viva questions']
 ];
 
@@ -37,10 +37,13 @@ export default function TeacherPracticalModal({ practical, user, notify, onSaved
     about: practical?.about || '',
     objectives: toEditableList(practical?.objectives),
     theory: practical?.theory || practical?.concept || '',
+    algorithm: practical?.algorithm || '',
+    program: practical?.program || '',
     requirements: toEditableList(practical?.requirements),
     procedure: toEditableList(practical?.procedure),
     task: practical?.task || '',
     expectedOutput: practical?.expectedOutput || '',
+    result: practical?.result || '',
     importantPoints: toEditableList(practical?.importantPoints),
     commonErrors: toEditableList(practical?.commonErrors),
     vivaQuestions: toEditableList(practical?.vivaQuestions)

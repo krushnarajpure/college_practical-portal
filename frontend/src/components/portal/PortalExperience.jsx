@@ -9,7 +9,6 @@ import {
 } from 'lucide-react';
 import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { useAuth } from '../../context/AuthContext';
-import { notifications } from '../../data/portalData';
 import api, { API_BASE_URL } from '../../services/api';
 import departmentService from '../../services/departmentService';
 import yearService from '../../services/yearService';
@@ -19,6 +18,7 @@ import teacherService from '../../services/teacherService';
 import studentService from '../../services/studentService';
 import pdfService from '../../services/pdfService';
 import AcademicDocumentsPage from '../../features/academicDocuments/AcademicDocumentsPage';
+import CourseManagementPage from '../../features/academicCatalog/CourseManagementPage';
 import TeamManagementPage from '../../features/team/TeamManagementPage';
 import progressService from '../../services/progressService';
 import bookmarkService from '../../services/bookmarkService';
@@ -36,6 +36,50 @@ const roleHome = { admin: '/admin/dashboard', teacher: '/teacher/dashboard', stu
 const roleNames = { admin: 'Administrator', teacher: 'Teacher', student: 'Student' };
 const number = (value) => String(value).padStart(2, '0');
 const formatNotePrice = (pricePaise) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(Number(pricePaise || 0) / 100);
+const managedPageRoutes = [
+  { pageId: 'academic-documents', match: (route) => route.startsWith('/academic-documents') },
+  { pageId: 'practicals', match: (route) => route.startsWith('/practicals') },
+  { pageId: 'subjects', match: (route) => route.startsWith('/subjects') },
+  { pageId: 'notes', match: (route) => route.startsWith('/notes') },
+  { pageId: 'bookmarks', match: (route) => route === '/bookmarks' },
+  { pageId: 'myraa', match: (route) => route === '/myraa' },
+  { pageId: 'students', role: 'teacher', match: (route) => route === '/students' },
+  { pageId: 'profile', match: (route) => route === '/profile' },
+  { pageId: 'notifications', match: (route) => route === '/notifications' },
+  { pageId: 'dashboard', match: (route) => route === '/dashboard' }
+];
+
+function getManagedPageId(role, route, pageSettings = []) {
+  const knownPageId = managedPageRoutes.find((entry) => (!entry.role || entry.role === role) && entry.match(route))?.pageId;
+  if (knownPageId) return knownPageId;
+  return pageSettings.find((setting) => {
+    const pagePath = `/${setting.pageId}`;
+    const supportsRole = setting.dashboardType === 'both' || setting.dashboardType === role;
+    return supportsRole && (route === pagePath || route.startsWith(`${pagePath}/`));
+  })?.pageId || '';
+}
+
+function isPageVisible(pageSettings, pageId, role) {
+  if (!pageId) return true;
+  const setting = pageSettings.find((item) => item.pageId === pageId);
+  if (!setting) return true;
+  return setting.isVisible !== false && (setting.dashboardType === 'both' || setting.dashboardType === role);
+}
+
+function pageTypeLabel(value) {
+  return value === 'both' ? 'Both' : value === 'teacher' ? 'Teacher' : 'Student';
+}
+
+function slugifyPageName(value) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function toDateTimeLocal(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
 
 async function openPaidNoteCheckout(noteId) {
   const orderResponse = await api.post('/notes/payments/orders', { noteId });
@@ -206,34 +250,33 @@ function ProfileAvatar({ name, photoUrl, size = 'md' }) {
   );
 }
 
-function DashboardShell({ role, children, search, setSearch, notificationOpen, setNotificationOpen, mobileOpen, setMobileOpen, onLogout, user, searchSubjects = [], searchPracticals = [], notificationItems = [], onNotificationRead }) {
+function DashboardShell({ role, children, search, setSearch, notificationOpen, setNotificationOpen, mobileOpen, setMobileOpen, onLogout, user, searchSubjects = [], searchPracticals = [], notificationItems = [], onNotificationRead, pageSettings = [] }) {
   const roleNav = {
     student: [
-      ['Overview', '/student/dashboard', LayoutDashboard], ['My subjects', '/student/subjects', BookOpen],
-      ['Practicals', '/student/practicals', ClipboardList], ['Bookmarks', '/student/bookmarks', Bookmark],
-      ['Notes', '/student/notes', Notebook], ['Academic Documents', '/student/academic-documents', FileText],
-      ['Myraa assistant', '/student/myraa', Sparkles], ['Profile', '/student/profile', Users]
+      ['Overview', '/student/dashboard', LayoutDashboard, 'dashboard'], ['My subjects', '/student/subjects', BookOpen, 'subjects'],
+      ['Practicals', '/student/practicals', ClipboardList, 'practicals'], ['Bookmarks', '/student/bookmarks', Bookmark, 'bookmarks'],
+      ['Notes', '/student/notes', Notebook, 'notes'], ['Academic Documents', '/student/academic-documents', FileText, 'academic-documents'],
+      ['Myraa assistant', '/student/myraa', Sparkles, 'myraa'], ['Profile', '/student/profile', Users, 'profile']
     ],
     teacher: [
-      ['Overview', '/teacher/dashboard', LayoutDashboard], ['My subjects', '/teacher/subjects', BookOpen],
-      ['Practicals', '/teacher/practicals', ClipboardList], ['Add practical', '/teacher/practicals/add', FilePlus2],
-      ['Academic Documents', '/teacher/academic-documents', FileText],
-      ['Students', '/teacher/students', Users], ['Profile', '/teacher/profile', Users]
+      ['Overview', '/teacher/dashboard', LayoutDashboard, 'dashboard'], ['My subjects', '/teacher/subjects', BookOpen, 'subjects'],
+      ['Practicals', '/teacher/practicals', ClipboardList, 'practicals'], ['Add practical', '/teacher/practicals/add', FilePlus2, 'practicals'],
+      ['Academic Documents', '/teacher/academic-documents', FileText, 'academic-documents'],
+      ['Students', '/teacher/students', Users, 'students'], ['Profile', '/teacher/profile', Users, 'profile']
     ],
     admin: [
-      ['Overview', '/admin/dashboard', LayoutDashboard], ['Departments', '/admin/departments', Building2],
+      ['Overview', '/admin/dashboard', LayoutDashboard], ['Courses & branches', '/admin/departments', Building2],
       ['Years', '/admin/years', GraduationCap], ['Semesters', '/admin/semesters', Activity],
       ['Subjects', '/admin/subjects', BookOpen], ['Teachers', '/admin/teachers', Users],
       ['Students', '/admin/students', Users], ['Practicals', '/admin/practicals', ClipboardList],
-      ['Team members', '/admin/team', Users], ['Notes', '/admin/notes', Notebook], ['Settings', '/admin/settings', Settings]
+      ['Team members', '/admin/team', Users], ['Notes', '/admin/notes', Notebook], ['Page Management', '/admin/page-management', Eye], ['Settings', '/admin/settings', Settings]
     ]
   };
+  const visibleNav = roleNav[role].filter(([, , , pageId]) => !pageId || isPageVisible(pageSettings, pageId, role));
   const scope = role === 'student'
-    ? [user?.departmentId?.code || user?.departmentId?.name || user?.departmentId, user?.yearId?.name || user?.yearId, user?.semesterId?.name || user?.semesterId].filter(Boolean).join(' · ') || 'Academic assignment not set'
+    ? [user?.programId?.name, user?.departmentId?.branchName || user?.departmentId?.name || user?.departmentId, user?.yearId?.name || user?.yearId, user?.semesterId?.name || user?.semesterId].filter(Boolean).join(' · ') || 'Academic assignment not set'
     : roleNames[role];
-  const roleNotifications = role === 'admin'
-    ? notificationItems
-    : notifications.filter((item) => item.role === role);
+  const roleNotifications = notificationItems;
   const unreadCount = roleNotifications.filter((item) => !item.read).length;
   const [profileOpen, setProfileOpen] = useState(false);
   const profilePhotoUrl = useProfilePhoto(user);
@@ -250,7 +293,7 @@ function DashboardShell({ role, children, search, setSearch, notificationOpen, s
       <div className="sidebar-context"><span className="context-dot" />{roleNames[role]} workspace</div>
       <nav className="side-nav" aria-label={`${roleNames[role]} navigation`}>
         <p className="nav-caption">WORKSPACE</p>
-        {roleNav[role].map(([label, to, Icon]) => <NavLink key={to} to={to} end={to.endsWith('dashboard')} className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`} onClick={() => setMobileOpen(false)}><Icon size={17} strokeWidth={1.8} /><span>{label}</span></NavLink>)}
+        {visibleNav.map(([label, to, Icon]) => <NavLink key={to} to={to} end={to.endsWith('dashboard')} className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`} onClick={() => setMobileOpen(false)}><Icon size={17} strokeWidth={1.8} /><span>{label}</span></NavLink>)}
       </nav>
       <div className="sidebar-bottom"><div className="term-card"><span>ACADEMIC STRUCTURE</span><strong>Managed by your college</strong><small>Assignments appear when configured</small></div><button className="nav-link logout-link" onClick={onLogout}><LogOut size={17} /><span>Sign out</span></button></div>
     </aside>
@@ -311,9 +354,12 @@ const practicalGuideFieldByTitle = {
   'What you will learn': 'learn',
   Requirements: 'requirements',
   'Concept / theory': 'concept',
+  Algorithm: 'algorithm',
+  'Program / source code': 'program',
   'Step-by-step procedure': 'procedure',
   'Practical task': 'task',
   'Expected output': 'expectedOutput',
+  Result: 'result',
   'Important points': 'importantPoints',
   'Common errors': 'commonErrors',
   'Viva questions': 'vivaQuestions'
@@ -325,6 +371,8 @@ const practicalDocumentHeadings = [
   ['Requirements', /^(?:apparatus|materials|software|hardware)\s*(?:\/|and)?\s*(?:requirements?)?\b\s*[:.\-]?\s*/i],
   ['Requirements', /^requirements?\b\s*[:.\-]?\s*/i],
   ['Theory', /^(?:theory|concept)\b\s*[:.\-]?\s*/i],
+  ['Algorithm', /^algorithm\b\s*[:.\-]?\s*/i],
+  ['Program', /^(?:program(?:\s+code)?|source code|code)\b\s*[:.\-]?\s*/i],
   ['Algorithm', /^algorithm\b\s*[:.\-]?\s*/i],
   ['Program', /^(?:program(?:\s+code)?|source code|code)\b\s*[:.\-]?\s*/i],
   ['Procedure', /^(?:procedure|steps?)\b\s*[:.\-]?\s*/i],
@@ -351,7 +399,7 @@ function extractPracticalSections(text) {
     const normalizedLine = line.replace(/^\d+\s*[.)]\s*/, '');
     const heading = practicalDocumentHeadings.find(([, pattern]) => pattern.test(normalizedLine));
     if (heading) {
-      const [, title, pattern] = heading;
+      const [title, pattern] = heading;
       currentSection = { title, content: [] };
       sections.push(currentSection);
       const remainder = normalizedLine.replace(pattern, '').trim();
@@ -527,6 +575,9 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [extractedPdfText, setExtractedPdfText] = useState('');
+  const [aiGuide, setAiGuide] = useState(null);
+  const [aiGuideError, setAiGuideError] = useState('');
+  const [aiGuideLoading, setAiGuideLoading] = useState(false);
   const [pdfTextError, setPdfTextError] = useState('');
   const [pdfTextLoading, setPdfTextLoading] = useState(false);
   const [showAllGuideSections, setShowAllGuideSections] = useState(false);
@@ -540,8 +591,11 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
     setLoadError('');
     setPractical(null);
     setExtractedPdfText('');
+    setAiGuide(null);
+    setAiGuideError('');
     setPdfTextError('');
     setPdfTextLoading(false);
+    setAiGuideLoading(false);
     setShowAllGuideSections(false);
     const loadPractical = async () => {
       try {
@@ -551,6 +605,20 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
         setPractical(loadedPractical);
         setLoading(false);
         if (loadedPractical?.pdfId) {
+          setAiGuideLoading(true);
+          api.get(`/pdfs/${loadedPractical.pdfId}/guide`)
+            .then((guideResponse) => {
+              if (active) {
+                setAiGuide(guideResponse?.data?.guide || null);
+                setShowAllGuideSections(true);
+              }
+            })
+            .catch((error) => {
+              if (active) setAiGuideError(error.message || 'Gemini could not analyze this handout.');
+            })
+            .finally(() => {
+              if (active) setAiGuideLoading(false);
+            });
           setPdfTextLoading(true);
           try {
             const textResponse = await api.get(`/pdfs/${loadedPractical.pdfId}/text`);
@@ -615,21 +683,37 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
   const Section = ({ title, children, number: sectionNumber }) => <section className="detail-section"><div className="detail-section-number">{sectionNumber}</div><div><h2>{title}</h2>{children}</div></section>;
   const hasText = (value) => typeof value === 'string' && value.trim().length > 0;
   const nonEmptyLines = (lines) => (Array.isArray(lines) ? lines : []).filter(hasText);
+  const guideSource = aiGuide || practical;
+  const guideAlgorithm = Array.isArray(guideSource.algorithm) ? guideSource.algorithm : String(guideSource.algorithm || '').split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const guideSections = [
-    { title: 'Aim', content: hasText(practical.aim) && <p>{practical.aim}</p> },
-    { title: 'About this practical', content: hasText(practical.about) && <p>{practical.about}</p> },
-    { title: 'What you will learn', content: nonEmptyLines(practical.learn).length > 0 && <ul>{nonEmptyLines(practical.learn).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
-    { title: 'Requirements', content: nonEmptyLines(practical.requirements).length > 0 && <ul>{nonEmptyLines(practical.requirements).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
-    { title: 'Concept / theory', content: hasText(practical.concept) && <p>{practical.concept}</p> },
-    { title: 'Step-by-step procedure', content: nonEmptyLines(practical.procedure).length > 0 && <ol>{nonEmptyLines(practical.procedure).map((line, index) => <li key={`${index}-${line}`}><span>{number(index + 1)}</span>{line}</li>)}</ol> },
-    { title: 'Practical task', content: hasText(practical.task) && <p>{practical.task}</p> },
-    { title: 'Expected output', content: hasText(practical.expectedOutput) && <div className="output-box"><CheckCircle2 size={17} /><p>{practical.expectedOutput}</p></div> },
-    { title: 'Important points', content: nonEmptyLines(practical.importantPoints).length > 0 && <ul>{nonEmptyLines(practical.importantPoints).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
-    { title: 'Common errors', content: nonEmptyLines(practical.commonErrors).length > 0 && <ul>{nonEmptyLines(practical.commonErrors).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
-    { title: 'Viva questions', content: nonEmptyLines(practical.vivaQuestions).length > 0 && <ol className="viva-list">{nonEmptyLines(practical.vivaQuestions).map((line, index) => <li key={`${index}-${line}`}><span>{number(index + 1)}</span>{line}</li>)}</ol> }
+    { title: 'Aim', content: hasText(guideSource.aim) && <p>{guideSource.aim}</p> },
+    { title: 'About this practical', content: hasText(guideSource.about) && <p>{guideSource.about}</p> },
+    { title: 'What you will learn', content: nonEmptyLines(guideSource.objectives || guideSource.learn).length > 0 && <ul>{nonEmptyLines(guideSource.objectives || guideSource.learn).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
+    { title: 'Requirements', content: nonEmptyLines(guideSource.requirements).length > 0 && <ul>{nonEmptyLines(guideSource.requirements).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
+    { title: 'Concept / theory', content: hasText(guideSource.theory || guideSource.concept) && <p>{guideSource.theory || guideSource.concept}</p> },
+    { title: 'Algorithm', content: guideAlgorithm.length > 0 && <ol>{guideAlgorithm.map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ol> },
+    { title: 'Program / source code', copyText: guideSource.program, content: hasText(guideSource.program) && <div className="practical-code-block"><div className="practical-code-toolbar"><span>PROGRAM</span></div><pre>{guideSource.program}</pre></div> },
+    { title: 'Step-by-step procedure', content: nonEmptyLines(guideSource.procedure).length > 0 && <ol>{nonEmptyLines(guideSource.procedure).map((line, index) => <li key={`${index}-${line}`}><span>{number(index + 1)}</span>{line}</li>)}</ol> },
+    { title: 'Practical task', content: hasText(guideSource.task) && <p>{guideSource.task}</p> },
+    { title: 'Expected output', content: hasText(guideSource.expectedOutput) && <div className="output-box"><CheckCircle2 size={17} /><p>{guideSource.expectedOutput}</p></div> },
+    { title: 'Result', copyText: guideSource.result, content: hasText(guideSource.result) && <p>{guideSource.result}</p> },
+    { title: 'Important points', content: nonEmptyLines(guideSource.importantPoints).length > 0 && <ul>{nonEmptyLines(guideSource.importantPoints).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
+    { title: 'Common errors', content: nonEmptyLines(guideSource.commonErrors).length > 0 && <ul>{nonEmptyLines(guideSource.commonErrors).map((line, index) => <li key={`${index}-${line}`}>{line}</li>)}</ul> },
+    { title: 'Viva questions', content: nonEmptyLines(guideSource.vivaQuestions).length > 0 && <ol className="viva-list">{nonEmptyLines(guideSource.vivaQuestions).map((line, index) => <li key={`${index}-${line}`}><span>{number(index + 1)}</span>{line}</li>)}</ol> }
   ].filter((section) => section.content);
   const parsedSections = extractPracticalSections(extractedPdfText);
-  const sectionAliases = {
+  const sectionAliases = aiGuide ? {
+    Aim: ['Aim'],
+    Objectives: ['What you will learn'],
+    Requirements: ['Requirements'],
+    Theory: ['Concept / theory'],
+    Algorithm: ['Algorithm'],
+    Program: ['Program / source code'],
+    Procedure: ['Step-by-step procedure'],
+    'Sample output': ['Expected output'],
+    Result: ['Result'],
+    'Viva questions': ['Viva questions']
+  } : {
     Aim: ['Aim'],
     Objectives: ['What you will learn'],
     Requirements: ['Requirements'],
@@ -641,7 +725,7 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
     Result: ['Expected output'],
     'Viva questions': ['Viva questions']
   };
-  const additionalPdfSections = parsedSections
+  const additionalPdfSections = (aiGuide ? [] : parsedSections)
     .filter((section) => !guideSections.some((existing) => (sectionAliases[section.title] || []).includes(existing.title)))
     .map((section) => ({
       title: section.title,
@@ -669,6 +753,8 @@ function StudentPracticalDetail({ practicalId, bookmarkedIds, toggleBookmark, co
   };
   return <><div className="breadcrumbs"><Link to="/student/practicals">← Back to practicals</Link><ChevronRight size={14} /><span>Practical {number(practical.practicalNumber)}</span></div><div className="practical-detail-layout"><article className="practical-article"><div className="practical-detail-head"><span className="practical-number-label">PRACTICAL NO. {number(practical.practicalNumber)}</span><Status>{completed ? 'Completed' : 'Available'}</Status><h1>{practical.title}</h1><div className="detail-actions"><Button variant="secondary" icon={saved ? Check : Bookmark} onClick={() => { toggleBookmark(practical.id); notify(saved ? 'Bookmark removed.' : 'Bookmark added.'); }}>{saved ? 'Bookmarked' : 'Bookmark'}</Button><Button onClick={() => completePractical(practical.id)} icon={CheckCircle2}>{completed ? 'Mark incomplete' : 'Mark complete'}</Button></div></div>
     <div className="guide-heading"><div><span className="eyebrow">{completeGuideSections.length ? 'PRACTICAL GUIDE' : 'PRACTICAL DETAILS'}</span><p>{completeGuideSections.length ? 'Clear instructions and reference material for this practical.' : 'Important information from your practical handout.'}</p></div><div className="guide-heading-actions"><Button type="button" variant="secondary" icon={Copy} onClick={copyAllPracticalInfo} disabled={!completeGuideSections.length}>Copy all</Button><ClipboardList size={19} aria-hidden="true" /></div></div>
+    {aiGuideLoading && <div className="inline-pdf-status"><LoaderCircle size={17} className="inline-pdf-spinner" />Reading the practical handout with Gemini...</div>}
+    {aiGuideError && <p className="page-description" role="status">{aiGuideError} Showing any readable handout text and teacher-provided guide instead.</p>}
     {completeGuideSections.length > 0
       ? <><div className="guide-section-list">{visibleGuideSections.map((section, index) => <Section key={`${section.title}-${index}`} title={section.title} number={number(index + 1)}>{section.content}</Section>)}</div>
         {completeGuideSections.length > compactGuideSections.length && <button type="button" className="guide-expand-button" onClick={() => setShowAllGuideSections((shown) => !shown)}>{showAllGuideSections ? 'Show key information only' : `Show all ${completeGuideSections.length} sections`}<ChevronDown size={15} className={showAllGuideSections ? 'guide-expand-icon-open' : ''} /></button>}
@@ -793,12 +879,11 @@ function NotesPage() {
   }, [category, openFolder, search, sort, viewStorageKey]);
 
   const categories = [...new Set(notes.map((note) => note.category || 'General'))].sort((left, right) => left.localeCompare(right));
-  const rootFolderName = notes.length
-    ? getNoteFolderSegments(notes[0])[0] || 'Notes'
-    : 'Notes';
-  const rootPath = [rootFolderName];
-  const currentPath = openFolder.length && openFolder[0] === rootFolderName ? openFolder : rootPath;
+  const rootPath = ['All notes'];
+  const currentPath = Array.isArray(openFolder) && openFolder.length ? openFolder : rootPath;
+  const currentSegments = currentPath[0] === 'All notes' ? currentPath.slice(1) : currentPath;
   const normalizedSearch = search.trim().toLowerCase();
+
   const filteredNotes = notes
     .filter((note) => !category || (note.category || 'General') === category)
     .filter((note) => {
@@ -813,26 +898,41 @@ function NotesPage() {
       if (sort === 'largest') return Number(right.size || 0) - Number(left.size || 0);
       return new Date(right.driveUpdatedAt || right.updatedAt) - new Date(left.driveUpdatedAt || left.updatedAt);
     });
-  const currentPathKey = JSON.stringify(currentPath);
-  const visibleFoldersByPath = new Map();
-  const visibleNotes = normalizedSearch
-    ? filteredNotes
-    : filteredNotes.filter((note) => JSON.stringify(getNoteFolderSegments(note)) === currentPathKey);
 
-  if (!normalizedSearch) {
+  const visibleNotes = filteredNotes.filter((note) => {
+    if (normalizedSearch) return true;
+    const segments = getNoteFolderSegments(note);
+    if (!currentSegments.length) return true;
+    return JSON.stringify(segments.slice(0, currentSegments.length)) === JSON.stringify(currentSegments);
+  });
+
+  const visibleFolders = !normalizedSearch ? (() => {
+    const folderMap = new Map();
+
     for (const note of filteredNotes) {
       const segments = getNoteFolderSegments(note);
-      for (let depth = rootPath.length; depth < segments.length; depth += 1) {
-        if (JSON.stringify(segments.slice(0, depth)) !== currentPathKey) continue;
-        const name = segments[depth];
-        const childKey = JSON.stringify(segments.slice(0, depth + 1));
-        const folder = visibleFoldersByPath.get(childKey) || { name, path: segments.slice(0, depth + 1), count: 0 };
-        folder.count += 1;
-        visibleFoldersByPath.set(childKey, folder);
+      if (!segments.length) continue;
+
+      if (!currentSegments.length) {
+        const folderPath = ['All notes', segments[0]];
+        const existing = folderMap.get(JSON.stringify(folderPath)) || { name: segments[0], path: folderPath, count: 0 };
+        existing.count += 1;
+        folderMap.set(JSON.stringify(folderPath), existing);
+        continue;
       }
+
+      if (JSON.stringify(segments.slice(0, currentSegments.length)) !== JSON.stringify(currentSegments)) continue;
+      if (segments.length <= currentSegments.length) continue;
+
+      const folderPath = [...currentPath, segments[currentSegments.length]];
+      const existing = folderMap.get(JSON.stringify(folderPath)) || { name: segments[currentSegments.length], path: folderPath, count: 0 };
+      existing.count += 1;
+      folderMap.set(JSON.stringify(folderPath), existing);
     }
-  }
-  const visibleFolders = [...visibleFoldersByPath.values()].sort((left, right) => left.name.localeCompare(right.name));
+
+    return [...folderMap.values()].sort((left, right) => left.name.localeCompare(right.name));
+  })() : [];
+
   const totalVisibleItems = visibleFolders.length + visibleNotes.length;
 
   if (loading) {
@@ -843,50 +943,62 @@ function NotesPage() {
     return <EmptyState title="Unable to load notes" text={error} icon={Notebook} action={<Button onClick={() => setReloadKey((key) => key + 1)}>Try again</Button>} />;
   }
 
-  return <>
-    <PageHeading eyebrow="STUDY RESOURCES" title="Notes" description="Open the notes shared for your classes directly inside the portal." />
+  return <div className="notes-page">
+    <PageHeading eyebrow="STUDENT LIBRARY" title="Notes & learning resources" description="Browse your academic notes, class materials and study references in one organized space." actions={<Button variant="secondary" icon={RefreshCw} onClick={() => setReloadKey((key) => key + 1)}>Refresh</Button>} />
     {syncWarning && <div className="notes-sync-warning" role="status">
       <span>{syncWarning}</span>
       <Button variant="quiet" onClick={() => setReloadKey((key) => key + 1)}>Retry sync</Button>
     </div>}
-    <div className="notes-summary" aria-live="polite">
-      <span><strong>{notes.length}</strong> total notes</span>
-      <span><strong>{visibleFolders.length}</strong> folders here</span>
-      <span><strong>{visibleNotes.length}</strong> notes here</span>
+
+    <div className="notes-hero surface">
+      <div>
+        <p className="eyebrow">CURATED STUDY MATERIAL</p>
+        <h2>Everything your branch needs, in one place.</h2>
+      </div>
+      <div className="notes-hero-stats">
+        <div className="notes-hero-stat"><strong>{notes.length}</strong><span>Total notes</span></div>
+        <div className="notes-hero-stat"><strong>{new Set(notes.map((note) => getNoteFolderSegments(note)[0]).filter(Boolean)).size}</strong><span>Categories</span></div>
+        <div className="notes-hero-stat"><strong>{visibleNotes.length}</strong><span>Visible now</span></div>
+      </div>
     </div>
-    {!normalizedSearch && <nav className="notes-breadcrumbs" aria-label="Notes folders">
-      {currentPath.map((segment, index) => {
-        const destination = currentPath.slice(0, index + 1);
-        const isCurrent = index === currentPath.length - 1;
-        return <span className="notes-breadcrumb-item" key={`${segment}-${index}`}>
-          {index > 0 && <ChevronRight size={14} aria-hidden="true" />}
-          <button type="button" aria-current={isCurrent ? 'page' : undefined} onClick={() => setOpenFolder(destination)}>{segment}</button>
-        </span>;
-      })}
-    </nav>}
-    <div className="notes-controls">
-      <label className="notes-control notes-search">
-        <Search size={16} aria-hidden="true" />
-        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes" aria-label="Search notes" />
-      </label>
-      <label className="notes-control">
-        <Filter size={16} aria-hidden="true" />
-        <select value={category} onChange={(event) => { setCategory(event.target.value); setOpenFolder(rootPath); }} aria-label="Filter by category">
-          <option value="">All categories</option>
-          {categories.map((item) => <option key={item} value={item}>{item}</option>)}
-        </select>
-      </label>
-      <label className="notes-control">
-        <span className="notes-sort-label">Sort</span>
-        <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort notes">
-          <option value="newest">Recently updated</option>
-          <option value="oldest">Least recently updated</option>
-          <option value="title-asc">Title A–Z</option>
-          <option value="title-desc">Title Z–A</option>
-          <option value="largest">Largest file</option>
-        </select>
-      </label>
+
+    <div className="notes-controls-panel surface">
+      {!normalizedSearch && <nav className="notes-breadcrumbs" aria-label="Notes folders">
+        {currentPath.map((segment, index) => {
+          const destination = currentPath.slice(0, index + 1);
+          const isCurrent = index === currentPath.length - 1;
+          return <span className="notes-breadcrumb-item" key={`${segment}-${index}`}>
+            {index > 0 && <ChevronRight size={14} aria-hidden="true" />}
+            <button type="button" aria-current={isCurrent ? 'page' : undefined} onClick={() => setOpenFolder(destination)}>{segment}</button>
+          </span>;
+        })}
+      </nav>}
+
+      <div className="notes-controls">
+        <label className="notes-control notes-search">
+          <Search size={16} aria-hidden="true" />
+          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes, subject, folder..." aria-label="Search notes" />
+        </label>
+        <label className="notes-control">
+          <Filter size={16} aria-hidden="true" />
+          <select value={category} onChange={(event) => { setCategory(event.target.value); setOpenFolder(rootPath); }} aria-label="Filter by category">
+            <option value="">All categories</option>
+            {categories.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </label>
+        <label className="notes-control">
+          <span className="notes-sort-label">Sort</span>
+          <select value={sort} onChange={(event) => setSort(event.target.value)} aria-label="Sort notes">
+            <option value="newest">Recently updated</option>
+            <option value="oldest">Least recently updated</option>
+            <option value="title-asc">Title A–Z</option>
+            <option value="title-desc">Title Z–A</option>
+            <option value="largest">Largest file</option>
+          </select>
+        </label>
+      </div>
     </div>
+
     <section className="notes-grid" aria-label="Drive folders and notes">
       {notes.length === 0 ? <EmptyState title="No notes available." text={syncWarning ? 'No notes are stored in the portal yet. Check Drive sharing and retry.' : 'No study notes have been synced yet.'} icon={Notebook} /> : totalVisibleItems ? <>
         {visibleFolders.map((folder) => (
@@ -896,33 +1008,34 @@ function NotesPage() {
             <ChevronRight size={18} className="notes-folder-arrow" />
           </button>
         ))}
+
         {visibleNotes.map((note) => (
-        <article className="notes-card" key={note.id || note._id}>
-          <div className="notes-card-top">
-            <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}>{note.storageType === 'driveLink' ? <Link2 size={20} /> : <FileText size={20} />}</span>
-            <span className="notes-card-type">{(note.extension || note.fileType || 'FILE').toString().toUpperCase()}</span>
-          </div>
-          <span className="notes-card-category">{note.category || 'General'}</span>
-          <h2>{note.title || 'Untitled note'}</h2>
-          <p className="notes-card-folder" title={note.folderPath || 'Shared notes'}>{note.folderPath || 'Shared notes'}</p>
-          <div className="notes-card-footer">
-            <span>{note.accessType === 'paid' && !note.hasAccess ? formatNotePrice(note.pricePaise) : note.size ? `${(Number(note.size) / (1024 * 1024)).toFixed(1)} MB` : note.fileType || 'Learning resource'}</span>
-            {note.accessType === 'paid' && !note.hasAccess
-              ? <Link className="button button-primary" to={`/student/notes/${note.id || note._id}`}>Buy note <ArrowRight size={15} /></Link>
-              : note.storageType === 'driveLink' && note.driveUrl
-              ? <a className="button button-secondary" href={note.driveUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${note.title || 'Google Drive note'}`}>Open Drive <ExternalLink size={15} /></a>
-              : <Button variant="secondary" onClick={() => setPreviewNote(note)} aria-label={`View ${note.title || 'note'}`}>
-                View note <ArrowRight size={15} />
-              </Button>}
-          </div>
-        </article>
+          <article className="notes-card" key={note.id || note._id}>
+            <div className="notes-card-top">
+              <span className={`notes-file-icon notes-file-${note.fileType || 'other'}`}>{note.storageType === 'driveLink' ? <Link2 size={20} /> : <FileText size={20} />}</span>
+              <span className="notes-card-type">{(note.extension || note.fileType || 'FILE').toString().toUpperCase()}</span>
+            </div>
+            <span className="notes-card-category">{note.category || 'General'}</span>
+            <h2>{note.title || 'Untitled note'}</h2>
+            <p className="notes-card-folder" title={note.folderPath || 'Shared notes'}>{note.folderPath || 'Shared notes'}</p>
+            <div className="notes-card-footer">
+              <span>{note.accessType === 'paid' && !note.hasAccess ? formatNotePrice(note.pricePaise) : note.size ? `${(Number(note.size) / (1024 * 1024)).toFixed(1)} MB` : note.fileType || 'Learning resource'}</span>
+              {note.accessType === 'paid' && !note.hasAccess
+                ? <Link className="button button-primary" to={`/student/notes/${note.id || note._id}`}>Buy note <ArrowRight size={15} /></Link>
+                : note.storageType === 'driveLink' && note.driveUrl
+                  ? <a className="button button-secondary" href={note.driveUrl} target="_blank" rel="noopener noreferrer" aria-label={`Open ${note.title || 'Google Drive note'}`}>Open Drive <ExternalLink size={15} /></a>
+                  : <Button variant="secondary" onClick={() => setPreviewNote(note)} aria-label={`View ${note.title || 'note'}`}>
+                    View note <ArrowRight size={15} />
+                  </Button>}
+            </div>
+          </article>
         ))}
       </> : normalizedSearch
         ? <EmptyState title="No matching notes" text="Try another search or category." icon={Notebook} />
         : <EmptyState title={currentPath.length > 1 ? 'This folder is empty' : 'No notes available.'} text={currentPath.length > 1 ? 'No subfolders or notes were found in this Drive folder.' : 'No study notes have been synced yet.'} icon={FolderOpen} />}
     </section>
     {previewNote && <NotePreview note={previewNote} onClose={() => setPreviewNote(null)} />}
-  </>;
+  </div>;
 }
 
 function NotePreview({ note, onClose }) {
@@ -2404,6 +2517,103 @@ function AdminSettings({ notify }) {
   return <><PageHeading eyebrow="CONFIGURATION" title="Settings" description="Manage portal-wide preferences and account access." actions={<Button onClick={() => notify('Portal settings saved.')}>Save settings</Button>} /><div className="settings-grid"><section className="surface settings-panel"><div className="panel-heading"><div><p className="eyebrow">PORTAL PREFERENCES</p><h2>General</h2></div><Settings size={18} /></div><label className="form-field"><span>College name</span><input value={general.collegeName} onChange={update('collegeName')} placeholder="Enter college name" /></label><label className="form-field"><span>Academic year</span><input value={general.academicYear} onChange={update('academicYear')} placeholder="Enter academic year" /></label><label className="form-field"><span>Default semester status</span><select value={general.semesterStatus} onChange={update('semesterStatus')}><option value="">Choose status</option><option>In progress</option><option>Upcoming</option><option>Completed</option></select></label></section><section className="surface settings-panel"><div className="panel-heading"><div><p className="eyebrow">ACCESS & SERVICES</p><h2>Portal controls</h2></div><ShieldCheck size={18} /></div>{[['registrations', 'Student registration', 'Allow new student registrations'], ['notifications', 'Email notifications', 'Send updates for published practicals'], ['ai', 'AI PDF analysis', 'Enable the teacher analysis interface']].map(([key, title, description]) => <label className="setting-toggle" key={key}><span><strong>{title}</strong><small>{description}</small></span><input type="checkbox" checked={enabled[key]} onChange={() => setEnabled((value) => ({ ...value, [key]: !value[key] }))} /></label>)}</section></div></>;
 }
 
+function PageManagementPage({ pageSettings, loading, error, onRefresh, onSave, notify }) {
+  const [messageDrafts, setMessageDrafts] = useState({});
+  const [reopenDrafts, setReopenDrafts] = useState({});
+  const [dashboardFilter, setDashboardFilter] = useState('student');
+  const [pageName, setPageName] = useState('');
+  const [pageId, setPageId] = useState('');
+  const [dashboardType, setDashboardType] = useState('student');
+  const [savingId, setSavingId] = useState('');
+
+  useEffect(() => {
+    setMessageDrafts(Object.fromEntries(pageSettings.map((setting) => [setting.pageId, setting.maintenanceMessage || ''])));
+    setReopenDrafts(Object.fromEntries(pageSettings.map((setting) => [setting.pageId, toDateTimeLocal(setting.maintenanceUntil)])));
+  }, [pageSettings]);
+
+  const saveSetting = async (setting, changes) => {
+    setSavingId(setting.pageId);
+    try {
+      await onSave({ ...setting, ...changes });
+      notify(`${setting.pageName} settings saved.`);
+    } catch (saveError) {
+      notify(saveError.message || 'Unable to save page settings.', 'error');
+    } finally {
+      setSavingId('');
+    }
+  };
+
+  const filteredPageSettings = pageSettings.filter((setting) => dashboardFilter === 'all'
+    || setting.dashboardType === 'both'
+    || setting.dashboardType === dashboardFilter);
+
+  const toggleVisibility = async (setting) => {
+    const willHide = setting.isVisible !== false;
+    const reopenTime = reopenDrafts[setting.pageId] ? new Date(reopenDrafts[setting.pageId]).toLocaleString() : '';
+    const scheduleMessage = willHide && reopenTime ? ` It will automatically reopen at ${reopenTime}.` : '';
+    if (!window.confirm(`${willHide ? 'Hide' : 'Show'} the ${setting.pageName} page for ${pageTypeLabel(setting.dashboardType)} dashboard users?${scheduleMessage}`)) return;
+    await saveSetting(setting, {
+      isVisible: !willHide,
+      maintenanceMessage: messageDrafts[setting.pageId] || setting.maintenanceMessage || '',
+      maintenanceUntil: willHide && reopenDrafts[setting.pageId] ? new Date(reopenDrafts[setting.pageId]).toISOString() : null
+    });
+  };
+
+  const addPage = async (event) => {
+    event.preventDefault();
+    const normalizedId = pageId || slugifyPageName(pageName);
+    if (!normalizedId || !pageName.trim()) return;
+    if (pageSettings.some((setting) => setting.pageId === normalizedId)) {
+      notify('A page with this ID already exists.', 'error');
+      return;
+    }
+    const newSetting = { pageId: normalizedId, pageName: pageName.trim(), dashboardType, isVisible: true, maintenanceMessage: '', maintenanceUntil: null };
+    try {
+      setSavingId(normalizedId);
+      await onSave(newSetting);
+      setPageName('');
+      setPageId('');
+      notify('Page configuration added.');
+    } catch (saveError) {
+      notify(saveError.message || 'Unable to add page configuration.', 'error');
+    } finally {
+      setSavingId('');
+    }
+  };
+
+  return <div className="page-management-page">
+    <PageHeading eyebrow="ACCESS CONTROL" title="Page Management" description="Control which student and teacher workspace pages are available." actions={<Button variant="secondary" icon={RefreshCw} onClick={onRefresh}>Refresh</Button>} />
+    <form className="surface page-config-form" onSubmit={addPage}>
+      <div className="page-config-heading"><div><p className="eyebrow">NEW CONFIGURATION</p><h2>Add a page</h2></div><Plus size={18} /></div>
+      <label className="form-field"><span>Page name</span><input value={pageName} onChange={(event) => { setPageName(event.target.value); setPageId(slugifyPageName(event.target.value)); }} placeholder="e.g. Assignments" maxLength={100} required /></label>
+      <label className="form-field"><span>Page ID</span><input value={pageId} onChange={(event) => setPageId(slugifyPageName(event.target.value))} placeholder="assignments" maxLength={60} required /></label>
+      <label className="form-field"><span>Dashboard type</span><select value={dashboardType} onChange={(event) => setDashboardType(event.target.value)}><option value="student">Student</option><option value="teacher">Teacher</option><option value="both">Both</option></select></label>
+      <Button type="submit" disabled={Boolean(savingId)}>Add page</Button>
+    </form>
+
+    <section className="surface page-management-table-wrap">
+      <div className="page-config-heading page-table-heading"><div><p className="eyebrow">DASHBOARD ACCESS</p><h2>{dashboardFilter === 'all' ? 'Configured pages' : `${pageTypeLabel(dashboardFilter)} dashboard pages`} {!loading && !error && <span>{filteredPageSettings.length}</span>}</h2></div><label className="page-dashboard-filter"><span>Show</span><select value={dashboardFilter} onChange={(event) => setDashboardFilter(event.target.value)} aria-label="Filter pages by dashboard"><option value="student">Student dashboard</option><option value="teacher">Teacher dashboard</option><option value="all">All pages</option></select></label></div>
+      {loading ? <div className="page-settings-state">Loading page settings...</div>
+        : error ? <div className="page-settings-state page-settings-error" role="alert">{error}</div>
+          : <div className="page-table-scroll"><table className="page-management-table">
+            <thead><tr><th>Page Name</th><th>Dashboard Type</th><th>Visibility Status</th><th>Maintenance Message</th><th>Action</th></tr></thead>
+            <tbody>{filteredPageSettings.map((setting) => {
+              const isVisible = setting.isVisible !== false;
+              const hasMessageChanges = (messageDrafts[setting.pageId] || '') !== (setting.maintenanceMessage || '');
+              const hasReopenChanges = (reopenDrafts[setting.pageId] || '') !== toDateTimeLocal(setting.maintenanceUntil);
+              return <tr key={setting.pageId}>
+                <td><strong>{setting.pageName}</strong><small>{setting.pageId}</small></td>
+                <td>{pageTypeLabel(setting.dashboardType)}</td>
+                <td><span className={`page-visibility-badge ${isVisible ? 'is-visible' : 'is-hidden'}`}>{isVisible ? <Eye size={14} /> : <EyeOff size={14} />}{isVisible ? 'Visible' : 'Hidden'}</span></td>
+                <td><div className="page-message-cell"><textarea value={messageDrafts[setting.pageId] || ''} onChange={(event) => setMessageDrafts((current) => ({ ...current, [setting.pageId]: event.target.value }))} placeholder="Shown while this page is hidden" maxLength={500} aria-label={`Maintenance message for ${setting.pageName}`} /><label className="page-reopen-input"><span>Reopen at (optional)</span><input type="datetime-local" value={reopenDrafts[setting.pageId] || ''} onChange={(event) => setReopenDrafts((current) => ({ ...current, [setting.pageId]: event.target.value }))} aria-label={`Scheduled reopen time for ${setting.pageName}`} /></label>{(hasMessageChanges || hasReopenChanges) && <button className="text-link" type="button" disabled={savingId === setting.pageId} onClick={() => saveSetting(setting, { maintenanceMessage: messageDrafts[setting.pageId] || '', maintenanceUntil: reopenDrafts[setting.pageId] ? new Date(reopenDrafts[setting.pageId]).toISOString() : null })}>Save maintenance settings</button>}</div></td>
+                <td><Button variant={isVisible ? 'secondary' : 'primary'} icon={isVisible ? EyeOff : Eye} disabled={savingId === setting.pageId} onClick={() => toggleVisibility(setting)}>{savingId === setting.pageId ? 'Saving...' : isVisible ? 'Hide' : 'Show'}</Button></td>
+              </tr>;
+            })}{!filteredPageSettings.length && <tr><td className="page-table-empty" colSpan={5}>No page configurations for this dashboard.</td></tr>}</tbody>
+          </table></div>}
+    </section>
+  </div>;
+}
+
 function AdminNotificationsPage({ items, onMarkRead }) {
   return <>
     <PageHeading eyebrow="COLLEGE ACTIVITY" title="Teacher updates" description="Subject assignments and practical activity reported by teachers." />
@@ -2443,10 +2653,57 @@ export default function PortalExperience() {
   const [adminSubjectList, setAdminSubjectList] = useState([]);
   const [adminCatalog, setAdminCatalog] = useState({ departments: [], years: [], semesters: [] });
   const [adminNotifications, setAdminNotifications] = useState([]);
+  const [userNotifications, setUserNotifications] = useState([]);
+  const [pageSettings, setPageSettings] = useState([]);
+  const [pageSettingsLoading, setPageSettingsLoading] = useState(true);
+  const [pageSettingsError, setPageSettingsError] = useState('');
+  const [pageSettingsReload, setPageSettingsReload] = useState(0);
   const [dataLoading, setDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
+  const [toastType, setToastType] = useState('success');
   const dataLoadRef = useRef({ identity: '', status: 'idle' });
-  const notify = (message) => { setToast(message); window.setTimeout(() => setToast(''), 2800); };
+  const notify = (message, type = 'success') => { setToastType(type); setToast(message); window.setTimeout(() => setToast(''), 2800); };
+  const refreshPageSettings = () => setPageSettingsReload((current) => current + 1);
+  const savePageSetting = async (setting) => {
+    const response = await api.put('/page-settings', setting);
+    const savedSetting = response?.data?.pageSetting;
+    if (savedSetting) {
+      setPageSettings((current) => [
+        ...current.filter((item) => item.pageId !== savedSetting.pageId),
+        savedSetting
+      ].sort((left, right) => left.pageName.localeCompare(right.pageName)));
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    let requestSequence = 0;
+
+    const loadPageSettings = async () => {
+      const currentRequest = ++requestSequence;
+      try {
+        const response = await api.get('/page-settings');
+        if (!active || currentRequest !== requestSequence) return;
+        setPageSettings(response?.data?.pageSettings || []);
+        setPageSettingsError('');
+      } catch (error) {
+        if (!active || currentRequest !== requestSequence) return;
+        setPageSettingsError(error.message || 'Unable to check page availability.');
+      } finally {
+        if (active && currentRequest === requestSequence) setPageSettingsLoading(false);
+      }
+    };
+
+    setPageSettingsLoading(true);
+    void loadPageSettings();
+    const interval = window.setInterval(loadPageSettings, 15000);
+    window.addEventListener('focus', loadPageSettings);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', loadPageSettings);
+    };
+  }, [pageSettingsReload, token]);
 
   useEffect(() => {
     if (role === 'student' && route === '/myraa') setHasOpenedMyraa(true);
@@ -2467,10 +2724,10 @@ export default function PortalExperience() {
 
   const refreshTeacherData = async () => {
     const [subjectResponse, practicalResponse, studentResponse, submissionResponse] = await Promise.all([
-      teacherService.getSubjects(),
-      teacherService.getPracticals(),
-      teacherService.getStudents(),
-      submissionService.getAll()
+      isPageVisible(pageSettings, 'subjects', 'teacher') ? teacherService.getSubjects() : Promise.resolve({ data: { subjects: [] } }),
+      isPageVisible(pageSettings, 'practicals', 'teacher') ? teacherService.getPracticals() : Promise.resolve({ data: { practicals: [] } }),
+      isPageVisible(pageSettings, 'students', 'teacher') ? teacherService.getStudents() : Promise.resolve({ data: { students: [] } }),
+      isPageVisible(pageSettings, 'practicals', 'teacher') ? submissionService.getAll() : Promise.resolve({ data: { submissions: [] } })
     ]);
     setTeacherSubjectList(subjectResponse?.data?.subjects || []);
     setTeacherPracticalList(practicalResponse?.data?.practicals || []);
@@ -2486,7 +2743,13 @@ export default function PortalExperience() {
       return undefined;
     }
     const identity = `${user._id || user.id || user.role}:${token}`;
-    const studentPageDoesNotNeedAcademicData = user.role === 'student' && ['/myraa', '/profile'].includes(route);
+    const studentPageDoesNotNeedAcademicData = user.role === 'student' && (['/myraa', '/profile', '/notifications'].includes(route) || route.startsWith('/notes'));
+    const managedPageId = getManagedPageId(user.role, route, pageSettings);
+    if (pageSettingsLoading) return undefined;
+    if (user.role !== 'admin' && (pageSettingsError || !isPageVisible(pageSettings, managedPageId, user.role))) {
+      setDataLoading(false);
+      return undefined;
+    }
     if (studentPageDoesNotNeedAcademicData) {
       if (dataLoadRef.current.identity !== identity) {
         dataLoadRef.current = { identity, status: 'idle' };
@@ -2507,11 +2770,11 @@ export default function PortalExperience() {
       try {
         if (user.role === 'student') {
           const [subjectResponse, practicalResponse, progressResponse, bookmarkResponse, submissionResponse, evaluationResponse] = await Promise.all([
-            api.get('/student/subjects'),
-            api.get('/student/practicals'),
-            progressService.getAll(),
-            bookmarkService.getAll(),
-            submissionService.getStudent(),
+            isPageVisible(pageSettings, 'subjects', 'student') ? api.get('/student/subjects') : Promise.resolve({ data: { subjects: [] } }),
+            isPageVisible(pageSettings, 'practicals', 'student') ? api.get('/student/practicals') : Promise.resolve({ data: { practicals: [] } }),
+            isPageVisible(pageSettings, 'practicals', 'student') ? progressService.getAll() : Promise.resolve({ data: { progress: [] } }),
+            isPageVisible(pageSettings, 'bookmarks', 'student') ? bookmarkService.getAll() : Promise.resolve({ data: { bookmarks: [] } }),
+            isPageVisible(pageSettings, 'practicals', 'student') ? submissionService.getStudent() : Promise.resolve({ data: { submissions: [] } }),
             evaluationService.getStudent()
           ]);
 
@@ -2531,16 +2794,15 @@ export default function PortalExperience() {
         }
 
         if (user.role === 'admin') {
-          const [practicals, teachers, students, subjects, departments, years, semesters, notificationResponse] = await Promise.all([
+          const [practicals, teachers, students, subjects, departments, years, semesters] = await Promise.all([
             api.get('/admin/practicals'), api.get('/admin/teachers'), api.get('/admin/students'), api.get('/admin/subjects'),
-            departmentService.getAll(), yearService.getAll(), semesterService.getAll(), notificationService.getAll()
+            departmentService.getAll(), yearService.getAll(), semesterService.getAll()
           ]);
           if (dataLoadRef.current.identity !== identity) return;
           setPracticalList(practicals?.data?.practicals || []);
           setAdminTeacherList(teachers?.data?.teachers || []);
           setAdminStudentList(students?.data?.students || []);
           setAdminSubjectList(subjects?.data?.subjects || []);
-          setAdminNotifications(notificationResponse?.data?.notifications || []);
           setAdminCatalog({
             departments: departments?.data?.departments || [],
             years: years?.data?.years || [],
@@ -2562,27 +2824,37 @@ export default function PortalExperience() {
 
     void loadAcademicData();
     return undefined;
-  }, [user, token, route]);
+  }, [user, token, route, pageSettings, pageSettingsError, pageSettingsLoading]);
 
   useEffect(() => {
-    if (user?.role !== 'admin' || !token) return undefined;
+    if (!user || !token) return undefined;
+    let active = true;
     const refresh = async () => {
       try {
         const response = await notificationService.getAll();
-        setAdminNotifications(response?.data?.notifications || []);
+        if (!active) return;
+        const nextNotifications = response?.data?.notifications || [];
+        if (user.role === 'admin') setAdminNotifications(nextNotifications);
+        else setUserNotifications(nextNotifications);
       } catch (error) {
         setToast(error.message || 'Unable to refresh teacher updates.');
       }
     };
-    const interval = window.setInterval(refresh, 20000);
-    return () => window.clearInterval(interval);
-  }, [user?.role, token]);
+    void refresh();
+    const interval = window.setInterval(refresh, 15000);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+    };
+  }, [user, token]);
 
   const markNotificationRead = async (notification) => {
     const id = String(notification._id || notification.id);
     try {
       await notificationService.markAsRead(id);
-      setAdminNotifications((items) => items.map((item) => (item._id || item.id) === id ? { ...item, read: true } : item));
+      const updateReadState = (items) => items.map((item) => (item._id || item.id) === id ? { ...item, read: true } : item);
+      if (role === 'admin') setAdminNotifications(updateReadState);
+      else setUserNotifications(updateReadState);
     } catch (error) {
       notify(error.message || 'Unable to mark this update as read.');
     }
@@ -2636,11 +2908,20 @@ export default function PortalExperience() {
   const subjectMatch = route.match(/^\/subjects\/([^/]+)/);
   const practicalMatch = route.match(/^\/practicals\/([^/]+)/);
   const noteMatch = route.match(/^\/notes\/([^/]+)/);
+  const managedPageId = role === 'admin' ? '' : getManagedPageId(role, route, pageSettings);
+  const activePageSetting = pageSettings.find((setting) => setting.pageId === managedPageId);
+  const pageIsHidden = Boolean(managedPageId && !isPageVisible(pageSettings, managedPageId, role));
   let page;
 
-  if (dataLoading && !(role === 'student' && ['/myraa', '/profile'].includes(route))) {
+  if (role !== 'admin' && pageSettingsLoading) {
+    page = <WorkspaceLoading title="Checking page availability" description="Loading the latest workspace access settings." />;
+  } else if (role !== 'admin' && pageSettingsError) {
+    page = <EmptyState title="Unable to check page availability" text={pageSettingsError} icon={ShieldCheck} action={<Button onClick={refreshPageSettings}>Try again</Button>} />;
+  } else if (pageIsHidden) {
+    page = <section className="surface maintenance-page" role="status"><span className="maintenance-page-icon"><LockKeyhole size={24} /></span><p className="eyebrow">TEMPORARILY UNAVAILABLE</p><h1>{activePageSetting?.pageName || 'This page'} is under maintenance</h1><p>{activePageSetting?.maintenanceMessage || 'This page is temporarily unavailable. Please check again later.'}</p>{activePageSetting?.maintenanceUntil && <p className="maintenance-reopen-time">Expected to be available from {new Date(activePageSetting.maintenanceUntil).toLocaleString()}.</p>}<Button variant="secondary" onClick={() => navigate(-1)}>Go back</Button></section>;
+  } else if (dataLoading && !(role === 'student' && ['/myraa', '/profile'].includes(route))) {
     page = <WorkspaceLoading title={role === 'student' ? 'Loading your courses' : 'Preparing your workspace'} description="Fetching the latest academic records and assignments." />;
-  } else if (dataError && (role !== 'student' || !['/myraa', '/profile'].includes(route))) {
+  } else if (dataError && (role !== 'student' || !(['/myraa', '/profile', '/notifications'].includes(route) || route.startsWith('/notes')))) {
     page = <EmptyState title="Unable to load database records" text={dataError} action={<Button onClick={() => window.location.reload()}>Try again</Button>} icon={Activity} />;
   } else if (role === 'student') {
     const activeStudentPracticals = studentPracticalList;
@@ -2656,7 +2937,7 @@ export default function PortalExperience() {
     else if (route === '/bookmarks') page = <StudentBookmarks practicalList={activeStudentPracticals} bookmarkedIds={bookmarkedIds} subjectList={activeStudentSubjects} />;
     else if (route === '/myraa') page = <MyraaPage />;
     else if (route === '/profile') page = <ProfilePage user={user} role={role} />;
-    else if (route === '/notifications') { const notices = notifications.filter((item) => item.role === role); page = <><PageHeading eyebrow="UPDATES" title="Notifications" description="Recent updates for your courses." />{notices.length ? notices.map((item) => <div className="surface notification-full" key={item.id}><span className="notification-dot" /><strong>{item.title}</strong><small>{item.time}</small></div>) : <EmptyState title="No notifications yet" text="Updates will appear here when your college publishes them." icon={Bell} />}</>; }
+    else if (route === '/notifications') { page = <><PageHeading eyebrow="UPDATES" title="Notifications" description="Recent updates for your courses." />{userNotifications.length ? userNotifications.map((item) => <article className={`surface notification-full ${item.read ? 'notification-read' : 'notification-unread'}`} key={item._id || item.id}><span className="notification-dot" /><span className="notification-message"><strong>{item.message || item.title}</strong><small>{item.createdAt ? new Date(item.createdAt).toLocaleString() : item.time}</small></span>{!item.read && <button type="button" className="notification-read-action" onClick={() => markNotificationRead(item)}>Mark read</button>}</article>) : <EmptyState title="No notifications yet" text="Updates will appear here when your college publishes them." icon={Bell} />}</>; }
   } else if (role === 'teacher') {
     const teacherSubjects = teacherSubjectList;
     const teacherPracticals = teacherPracticalList;
@@ -2671,17 +2952,19 @@ export default function PortalExperience() {
     else if (route === '/profile') page = <ProfilePage user={user} role={role} notify={notify} />;
   } else if (role === 'admin') {
     if (route === '/dashboard') page = <AdminDashboard practicalList={practicalList} teacherList={adminTeacherList} studentList={adminStudentList} catalog={adminCatalog} subjectList={adminSubjectList} adminNotifications={adminNotifications} />;
+    else if (route === '/departments') page = <CourseManagementPage notify={notify} />;
     else if (route === '/students') page = <AdminStudentDirectory />;
     else if (route === '/team') page = <TeamManagementPage />;
     else if (route === '/notes') page = <AdminNotesPage notify={notify} />;
-    else if (['/departments', '/years', '/semesters', '/subjects', '/teachers', '/practicals'].includes(route)) page = <AdminManagement page={route.slice(1)} practicalList={practicalList} notify={notify} />;
+    else if (['/years', '/semesters', '/subjects', '/teachers', '/practicals'].includes(route)) page = <AdminManagement page={route.slice(1)} practicalList={practicalList} notify={notify} />;
     else if (route === '/notifications') page = <AdminNotificationsPage items={adminNotifications} onMarkRead={markNotificationRead} />;
     else if (route === '/settings') page = <AdminSettings notify={notify} />;
+    else if (route === '/page-management') page = <PageManagementPage pageSettings={pageSettings} loading={pageSettingsLoading} error={pageSettingsError} onRefresh={refreshPageSettings} onSave={savePageSetting} notify={notify} />;
     else if (route === '/profile') page = <ProfilePage user={user} role={role} notify={notify} />;
   }
   if (!page) page = <EmptyState title="Page not found" text="This workspace page is not available." action={<Link to={roleHome[role]} className="text-link">Return to overview</Link>} />;
 
   const searchSubjects = role === 'student' ? studentSubjectList : role === 'teacher' ? teacherSubjectList : adminSubjectList;
   const searchPracticals = role === 'student' ? studentPracticalList : role === 'teacher' ? teacherPracticalList : practicalList;
-  return <DashboardShell role={role} user={user} search={search} setSearch={setSearch} notificationOpen={notificationOpen} setNotificationOpen={setNotificationOpen} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={logout} searchSubjects={searchSubjects} searchPracticals={searchPracticals} notificationItems={adminNotifications} onNotificationRead={markNotificationRead}><div className="page-enter">{page}</div>{role === 'student' && hasOpenedMyraa && <div hidden={route !== '/myraa'}><Suspense fallback={route === '/myraa' ? <WorkspaceLoading title="Loading Myraa" description="Preparing your voice assistant." /> : null}><MyraaIntegrated /></Suspense></div>}<div className={`toast ${toast ? 'toast-visible' : ''}`} role="status"><CheckCircle2 size={17} />{toast}</div></DashboardShell>;
+  return <DashboardShell role={role} user={user} search={search} setSearch={setSearch} notificationOpen={notificationOpen} setNotificationOpen={setNotificationOpen} mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} onLogout={logout} searchSubjects={searchSubjects} searchPracticals={searchPracticals} notificationItems={role === 'admin' ? adminNotifications : userNotifications} onNotificationRead={markNotificationRead} pageSettings={pageSettings}><div className="page-enter">{page}</div>{role === 'student' && hasOpenedMyraa && !pageIsHidden && !pageSettingsError && <div hidden={route !== '/myraa'}><Suspense fallback={route === '/myraa' ? <WorkspaceLoading title="Loading Myraa" description="Preparing your voice assistant." /> : null}><MyraaIntegrated /></Suspense></div>}<div className={`toast ${toastType === 'error' ? 'toast-error' : ''} ${toast ? 'toast-visible' : ''}`} role="status">{toastType === 'error' ? <X size={17} /> : <CheckCircle2 size={17} />}{toast}</div></DashboardShell>;
 }

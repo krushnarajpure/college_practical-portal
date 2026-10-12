@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { env } from './env.js';
 import { initializeGridFSBucket } from './storage.js';
 import { seedAcademicLevels } from './seedAcademicLevels.js';
+import { seedDepartments } from './seedDepartments.js';
 
 const connectDB = async () => {
   try {
@@ -12,6 +13,7 @@ const connectDB = async () => {
     const conn = await mongoose.connect(env.mongodbUri, { dbName: 'college_practical_portal' });
     initializeGridFSBucket(conn.connection.db);
     await seedAcademicLevels();
+    await seedDepartments();
     console.log('MongoDB connected successfully');
     return conn;
   } catch (error) {

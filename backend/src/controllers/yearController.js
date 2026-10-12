@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Year from '../models/Year.js';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 
@@ -13,6 +14,12 @@ export const getAllYears = async (req, res, next) => {
     const filter = requestedStatus === 'active' || requestedStatus === 'inactive'
       ? { status: requestedStatus }
       : (req.user?.role === 'admin' ? {} : { status: 'active', academicLevel: { $in: [1, 2, 3, 4] } });
+    if (req.query?.programId) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.programId)) {
+        return res.status(400).json(errorResponse('Invalid course id.', 'Bad Request', 400));
+      }
+      filter.programId = req.query.programId;
+    }
     const years = await Year.find(filter).sort({ order: 1, name: 1 });
     return res.status(200).json(successResponse('Years retrieved.', { years }));
   } catch (error) {

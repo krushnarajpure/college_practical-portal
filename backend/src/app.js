@@ -11,6 +11,7 @@ import adminRoutes from './routes/adminRoutes.js';
 import teacherRoutes from './routes/teacherRoutes.js';
 import studentRoutes from './routes/studentRoutes.js';
 import departmentRoutes from './routes/departmentRoutes.js';
+import programRoutes from './routes/programRoutes.js';
 import yearRoutes from './routes/yearRoutes.js';
 import semesterRoutes from './routes/semesterRoutes.js';
 import subjectRoutes from './routes/subjectRoutes.js';
@@ -26,6 +27,7 @@ import myraaRoutes from './routes/myraaRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
 import academicDocumentRoutes from './routes/academicDocumentRoutes.js';
 import notesRoutes from './routes/notesRoutes.js';
+import pageSettingRoutes from './routes/pageSettingRoutes.js';
 import { razorpayNotePaymentWebhook } from './controllers/notePaymentController.js';
 import { notFoundHandler, errorMiddleware } from './middleware/errorMiddleware.js';
 
@@ -81,11 +83,13 @@ app.get('/api/health', (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/page-settings', pageSettingRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/teacher', teacherRoutes);
 app.use('/api/student', studentRoutes);
 app.use('/api/departments', departmentRoutes);
+app.use('/api/programs', programRoutes);
 app.use('/api/years', yearRoutes);
 app.use('/api/semesters', semesterRoutes);
 app.use('/api/subjects', subjectRoutes);

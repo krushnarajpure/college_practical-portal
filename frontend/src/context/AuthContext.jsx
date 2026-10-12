@@ -93,11 +93,12 @@ export function AuthProvider({ children }) {
         role: details.role,
         ...(details.role === 'student' ? {
           studentId: details.studentId,
+          programId: details.programId,
           departmentId: details.departmentId,
           yearId: details.yearId,
           semesterId: details.semesterId
         } : {}),
-        ...(details.role === 'teacher' ? { employeeId: details.employeeId, departmentId: details.departmentId } : {})
+        ...(details.role === 'teacher' ? { employeeId: details.employeeId, programId: details.programId, departmentId: details.departmentId } : {})
       },
       timeoutMs: AUTH_REQUEST_TIMEOUT_MS
     });

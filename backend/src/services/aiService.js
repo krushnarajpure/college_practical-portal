@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 
 const gemini = new GoogleGenAI({ apiKey: env.aiApiKey });
 const model = 'gemini-3.8-flash';
-const fields = ['title', 'aim', 'about', 'objectives', 'requirements', 'theory', 'procedure', 'task', 'expectedOutput', 'importantPoints', 'commonErrors', 'vivaQuestions'];
+const fields = ['title', 'aim', 'about', 'objectives', 'requirements', 'theory', 'algorithm', 'program', 'procedure', 'task', 'expectedOutput', 'result', 'importantPoints', 'commonErrors', 'vivaQuestions'];
 const listFields = ['objectives', 'requirements', 'procedure', 'importantPoints', 'commonErrors', 'vivaQuestions'];
 const practicalSchema = {
   type: 'object',
@@ -47,7 +47,7 @@ const aiService = {
         model,
         input: [
           { type: 'document', mime_type: 'application/pdf', data: pdfBuffer.toString('base64') },
-          { type: 'text', text: `Read the attached college practical PDF carefully. Draft a truthful, student-friendly practical guide in clear English. Use the practical title "${title}" as context, but prefer details in the PDF. Never invent specific requirements, commands, output, or facts that the PDF does not support; leave unsupported strings empty and unsupported lists empty. Return a practical guide matching the required JSON fields.` }
+          { type: 'text', text: `Read every page of the attached college practical PDF carefully. Return a complete, student-friendly guide in clear English, preserving the source's meaning, code, commands, examples, and sequence. Use the practical title "${title}" as context, but the PDF is the source of truth. Separate the aim, objectives, requirements, theory, algorithm, program/source code, procedure, expected output, result, important points, common errors, and viva questions into their matching fields. Do not merge the whole document into objectives or another single field. Never invent facts or code; leave unsupported strings empty and unsupported lists empty. Return a practical guide matching the required JSON fields.` }
         ],
         response_format: {
           type: 'text',

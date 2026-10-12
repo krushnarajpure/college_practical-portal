@@ -8,7 +8,22 @@ const academicYears = [
   { level: 4, name: '4th Year', code: 'YEAR-4', order: 4, semesters: [7, 8] }
 ];
 
+async function removeObsoleteSemesterCodeIndex() {
+  const indexes = await Semester.collection.indexes();
+  const obsoleteIndex = indexes.find((index) => index.name === 'code_1' && index.unique);
+  if (obsoleteIndex) await Semester.collection.dropIndex(obsoleteIndex.name);
+}
+
+async function removeObsoleteYearCodeIndex() {
+  const indexes = await Year.collection.indexes();
+  const obsoleteIndex = indexes.find((index) => index.name === 'code_1' && index.unique);
+  if (obsoleteIndex) await Year.collection.dropIndex(obsoleteIndex.name);
+}
+
 export async function seedAcademicLevels() {
+  await removeObsoleteSemesterCodeIndex();
+  await removeObsoleteYearCodeIndex();
+
   for (const academicYear of academicYears) {
     const year = await Year.findOneAndUpdate(
       { academicLevel: academicYear.level },

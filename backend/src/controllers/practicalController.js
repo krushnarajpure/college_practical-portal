@@ -10,7 +10,7 @@ import { successResponse, errorResponse } from '../utils/apiResponse.js';
 
 const populatedPractical = (query) => query.populate(['subjectId', 'departmentId', 'yearId', 'semesterId']);
 const academicFields = ['departmentId', 'yearId', 'semesterId'];
-const guideFields = ['aim', 'about', 'objectives', 'requirements', 'theory', 'procedure', 'task', 'expectedOutput', 'importantPoints', 'commonErrors', 'vivaQuestions'];
+const guideFields = ['aim', 'about', 'objectives', 'requirements', 'theory', 'algorithm', 'program', 'procedure', 'task', 'expectedOutput', 'result', 'importantPoints', 'commonErrors', 'vivaQuestions'];
 
 function validId(value) {
   return typeof value === 'string' && mongoose.Types.ObjectId.isValid(value);

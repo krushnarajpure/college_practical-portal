@@ -1,5 +1,6 @@
 import Semester from '../models/Semester.js';
 import Year from '../models/Year.js';
+import mongoose from 'mongoose';
 import { successResponse, errorResponse } from '../utils/apiResponse.js';
 
 const normalizeStatus = (payload = {}) => {
@@ -14,6 +15,13 @@ export const getAllSemesters = async (req, res, next) => {
     const filter = requestedStatus === 'active' || requestedStatus === 'inactive'
       ? { status: requestedStatus }
       : (req.user?.role === 'admin' ? {} : { status: 'active' });
+    if (req.query?.programId) {
+      if (!mongoose.Types.ObjectId.isValid(req.query.programId)) {
+        return res.status(400).json(errorResponse('Invalid course id.', 'Bad Request', 400));
+      }
+      const years = await Year.find({ programId: req.query.programId }).distinct('_id');
+      filter.yearId = { $in: years };
+    }
     const semesters = await Semester.find(filter).populate('yearId').sort({ number: 1, name: 1 });
     return res.status(200).json(successResponse('Semesters retrieved.', { semesters }));
   } catch (error) {
